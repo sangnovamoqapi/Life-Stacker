@@ -11,9 +11,13 @@ export const TopBar: React.FC = () => {
     <div className="sticky top-0 z-20 bg-[#0d1017]/80 backdrop-blur-md border-b border-white/[0.08] h-14 flex items-center px-6 justify-between shrink-0 gap-4">
       {/* Brand & Active Pill */}
       <div className="flex items-center gap-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 text-sm font-bold">
-            ▤
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+            <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2" />
+              <polyline points="2 17 12 22 22 17" />
+              <polyline points="2 12 12 17 22 12" />
+            </svg>
           </div>
           <h1 className="font-sans text-base font-bold text-slate-100 tracking-tight">Life Stack</h1>
         </div>
