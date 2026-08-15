@@ -1,0 +1,224 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0d12;
+  --color-bg-raised: #131720;
+  --color-lane-bg: rgba(15, 18, 26, 0.65);
+  --color-card: rgba(20, 24, 34, 0.80);
+  --color-card-hover: rgba(28, 34, 48, 0.90);
+  --color-ink: #f8fafc;
+  --color-ink-dim: #94a3b8;
+  --color-ink-faint: #64748b;
+  --color-border: rgba(255, 255, 255, 0.10);
+  --color-border-soft: rgba(255, 255, 255, 0.06);
+  --color-active: #3b82f6;
+  --color-active-dim: rgba(59, 130, 246, 0.18);
+  --color-paused: #94a3b8;
+  --color-paused-dim: rgba(148, 163, 184, 0.15);
+  --color-blocked: #ef4444;
+  --color-blocked-dim: rgba(239, 68, 68, 0.18);
+  --color-done: #10b981;
+  --color-done-dim: rgba(16, 185, 129, 0.18);
+  --color-queued: #64748b;
+  --color-queued-dim: rgba(100, 116, 139, 0.15);
+  --color-sector-0: #38bdf8;
+  --color-sector-1: #f472b6;
+  --color-sector-2: #818cf8;
+  --color-sector-3: #34d399;
+  --color-sector-4: #fb923c;
+  --color-sector-5: #60a5fa;
+  --color-sector-6: #a78bfa;
+  --color-sector-7: #fbbf24;
+  --font-serif: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Consolas, monospace;
+}
+
+:root {
+  --glass-bg: rgba(14, 18, 26, 0.45);
+  --glass-bg-strong: rgba(18, 23, 34, 0.58);
+  --glass-blur: blur(16px);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  accent-color: var(--color-active);
+}
+
+/* Reduce transparency mode — solid backgrounds, no blur */
+.reduce-transparency {
+  --glass-bg: #141722;
+  --glass-bg-strong: #191e2b;
+  --glass-blur: none;
+  --glass-border: rgba(255, 255, 255, 0.06);
+}
+
+@layer base {
+  html, body {
+    @apply bg-bg text-ink antialiased box-border font-sans;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  body {
+    background-color: #0b0b0d;
+  }
+
+  * {
+    @apply border-border-soft;
+    box-sizing: border-box;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-faint;
+  }
+
+  ::selection {
+    @apply bg-active-dim text-ink;
+  }
+}
+
+/* ── Progress bar ── */
+.progress-track {
+  @apply relative h-2 rounded-full overflow-hidden;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+}
+.progress-fill {
+  @apply h-full rounded-full transition-all duration-300;
+  background: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+}
+
+/* ── Dominant card (top card in each lane) — frosted glass ── */
+.card-dominant {
+  @apply rounded-lg p-4;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 2px 8px rgba(0,0,0,0.5),
+    0 0 20px var(--sector-glow, rgba(79,168,160,0.08));
+}
+.card-dominant:hover {
+  background: var(--glass-bg-strong);
+  filter: brightness(1.08);
+  box-shadow:
+    0 4px 14px rgba(0,0,0,0.6),
+    0 0 28px var(--sector-glow, rgba(79,168,160,0.12));
+}
+
+/* ── Compact card — frosted glass ── */
+.card-compact {
+  @apply flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer transition-colors;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+.card-compact:hover {
+  filter: brightness(1.12);
+}
+
+/* ── Lane — frosted glass ── */
+.lane-glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
+/* ── Modal — frosted glass strong ── */
+.modal-glass {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
+/* ── Focus strip tile ── */
+.focus-tile {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  @apply rounded-lg p-3 flex flex-col justify-between min-h-[72px];
+}
+
+/* ── Status pill fill states ── */
+.status-pill {
+  @apply text-[9px] uppercase font-mono px-2 py-0.5 rounded-sm border transition-all;
+}
+.status-pill-active    { @apply bg-active-dim text-active border-active/30; }
+.status-pill-paused    { @apply bg-paused-dim text-paused border-paused/30; }
+.status-pill-blocked   { @apply bg-blocked-dim text-blocked border-blocked/30; }
+.status-pill-done      { @apply bg-done-dim text-done border-done/30; }
+.status-pill-queued    { @apply bg-queued-dim text-queued border-queued/30; }
+.status-pill-inactive  { @apply bg-transparent text-ink-faint border-border-soft hover:border-ink-faint hover:text-ink-dim; }
+
+/* ── Lane scroll fade ── */
+.lanes-container {
+  mask-image: linear-gradient(to right, black calc(100% - 48px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 48px), transparent 100%);
+}
+.lanes-container:not(.has-overflow) {
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+/* ── Drag handle for overview rows ── */
+.drag-handle {
+  @apply cursor-grab active:cursor-grabbing text-ink-faint hover:text-ink-dim transition-colors;
+}
+.drag-row.dragging {
+  @apply opacity-50;
+}
+.drag-row.drag-over {
+  @apply border-t-2 border-active;
+}
+
+/* ── Range input with custom track ── */
+input[type='range'].progress-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+  outline: none;
+  cursor: ew-resize;
+}
+input[type='range'].progress-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  cursor: ew-resize;
+}
+input[type='range'].progress-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+}
+
+/* ── Radial progress ring (SVG) ── */
+.progress-ring-track {
+  stroke: rgba(255, 255, 255, 0.10);
+  fill: none;
+}
+.progress-ring-fill {
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease;
+}

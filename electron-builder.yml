@@ -1,0 +1,35 @@
+appId: com.lifestack.app
+productName: Life Stack
+directories:
+  buildResources: build
+  output: dist
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{.eslintrc.cjs,.prettierrc.yaml}'
+  - 'out/**/*'
+asar: true
+asarUnpack:
+  - '**/*.node'
+  - '**/node_modules/better-sqlite3/**/*'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  icon: build/icon.png

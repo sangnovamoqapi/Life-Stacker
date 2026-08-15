@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stacks — active load tracker</title>
+<style>
+  :root{
+    --bg: #14121c;
+    --bg-raised: #1a1726;
+    --lane-bg: #1d1a2b;
+    --card: #262038;
+    --card-hover: #2c2540;
+    --ink: #ece7f5;
+    --ink-dim: #9c93b5;
+    --ink-faint: #6b6486;
+    --border: #332c49;
+    --border-soft: #2a2440;
+
+    --active: #e8b23d;
+    --active-dim: #4a3d22;
+    --paused: #8b84a8;
+    --blocked: #c2554a;
+    --blocked-dim: #3d2622;
+    --someday: #6b7280;
+    --done: #7fa88a;
+    --done-dim: #253327;
+
+    --sector-0: #4fa8a0;
+    --sector-1: #c97b94;
+    --sector-2: #7c86c9;
+    --sector-3: #9ca84f;
+    --sector-4: #e08b6b;
+    --sector-5: #6faad1;
+    --sector-6: #b892d6;
+    --sector-7: #d1a86f;
+
+    --serif: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+    --mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    --radius: 3px;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 1200px 600px at 20% -10%, rgba(232,178,61,0.05), transparent),
+      radial-gradient(ellipse 1000px 500px at 90% 10%, rgba(124,134,201,0.04), transparent);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection{ background: var(--active-dim); color: var(--ink); }
+  button{ font-family: inherit; cursor:pointer; }
+  input, select, textarea{ font-family: inherit; }
+  a{ color: inherit; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position: sticky; top:0; z-index: 20;
+    background: rgba(20,18,28,0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-soft);
+    padding: 14px 20px;
+    display:flex; align-items:center; gap:16px; flex-wrap: wrap;
+  }
+  .brand{
+    font-family: var(--serif);
+    font-size: 21px;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    display:flex; align-items:baseline; gap:8px;
+    margin-right: 4px;
+    white-space:nowrap;
+  }
+  .brand .tick{ color: var(--active); font-family: var(--mono); font-size:14px; }
+
+  .focus-chip{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-dim);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 12px;
+    display:flex; align-items:center; gap:6px;
+    white-space:nowrap;
+  }
+  .focus-chip b{ color: var(--active); font-weight:600; }
+  .focus-chip.over{ border-color: var(--blocked); }
+  .focus-chip.over b{ color: var(--blocked); }
+
+  .search{
+    flex:1; min-width: 140px; max-width: 320px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--ink);
+    padding: 7px 10px;
+    font-size: 13px;
+    outline: none;
+  }
+  .search:focus{ border-color: var(--ink-faint); }
+  .search::placeholder{ color: var(--ink-faint); }
+
+  .viewtoggle{
+    display:flex; background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius); overflow:hidden;
+  }
+  .viewtoggle button{
+    background:none; border:none; color: var(--ink-dim); padding: 7px 13px; font-size:12px; font-family: var(--mono);
+    letter-spacing: 0.03em;
+  }
+  .viewtoggle button.on{ background: var(--card); color: var(--active); }
+
+  .btn{
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    padding: 7px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    display:flex; align-items:center; gap:6px;
+    white-space:nowrap;
+  }
+  .btn:hover{ background: var(--card-hover); border-color: var(--ink-faint); }
+  .btn.primary{ background: var(--active); color: #1a1408; border-color: var(--active); font-weight:600; }
+  .btn.primary:hover{ background: #f2c25a; }
+  .btn.ghost{ background: none; }
+  .btn.small{ padding: 4px 9px; font-size: 11px; }
+  .btn.icon-only{ padding: 6px 8px; }
+
+  .spacer{ flex: 1 1 auto; }
+
+  /* ---------- lanes view ---------- */
+  #board{ padding: 18px 20px 60px; }
+  .lanes{
+    display:flex; gap:14px; overflow-x:auto; padding-bottom: 10px;
+    align-items: flex-start;
+  }
+  .lane{
+    flex: 0 0 260px;
+    background: var(--lane-bg);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    display:flex; flex-direction:column;
+    max-height: calc(100vh - 130px);
+  }
+  .lane-head{
+    padding: 12px 12px 10px;
+    border-bottom: 1px solid var(--border-soft);
+    display:flex; align-items:center; gap:8px;
+  }
+  .lane-tab{ width:9px; height:9px; border-radius:2px; flex-shrink:0; }
+  .lane-name{ font-size: 13.5px; font-weight:600; letter-spacing:0.01em; flex:1; }
+  .lane-count{ font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+  .lane-body{ overflow-y:auto; padding: 10px; display:flex; flex-direction:column; gap:8px; flex:1; }
+  .lane-body::-webkit-scrollbar{ width:6px; }
+  .lane-body::-webkit-scrollbar-thumb{ background: var(--border); border-radius:3px; }
+  .lane-empty{ color: var(--ink-faint); font-size:12px; padding: 16px 4px; text-align:center; font-style:italic; }
+  .lane-add{
+    margin: 4px 10px 10px; text-align:center; font-size:11.5px; color: var(--ink-faint);
+    border: 1px dashed var(--border); border-radius: var(--radius); padding:6px; background:none;
+  }
+  .lane-add:hover{ color: var(--ink-dim); border-color: var(--ink-faint); }
+
+  /* ---------- card ---------- */
+  .card{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--sc, var(--border));
+    border-radius: var(--radius);
+    padding: 9px 10px 8px;
+    position: relative;
+    transition: transform 0.12s ease, background 0.12s ease;
+  }
+  .card:hover{ background: var(--card-hover); }
+  .card.grid-card{ transform:none; }
+  .card-top{ display:flex; align-items:flex-start; gap:6px; }
+  .card-title{
+    font-size: 13px; line-height:1.35; color: var(--ink); cursor:pointer;
+    flex:1; word-break: break-word;
+  }
+  .card-title:hover{ text-decoration: underline; text-decoration-color: var(--ink-faint); }
+  .status-dot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; margin-top:4px; }
+  .card-meta{
+    font-family: var(--mono); font-size: 10px; color: var(--ink-faint);
+    margin-top: 5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+  }
+  .stale-flag{ color: var(--blocked); }
+  .card-progress-row{ display:flex; align-items:center; gap:7px; margin-top:7px; }
+  .card-progress-row input[type=range]{
+    flex:1; -webkit-appearance:none; height:4px; border-radius:2px;
+    background: var(--border);
+    outline:none;
+  }
+  .card-progress-row input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:11px; height:11px; border-radius:50%;
+    background: var(--active); cursor:pointer; border: 2px solid var(--bg);
+  }
+  .card-progress-row input[type=range]::-moz-range-thumb{
+    width:11px; height:11px; border-radius:50%; background: var(--active); border:2px solid var(--bg); cursor:pointer;
+  }
+  .pct{ font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); width:30px; text-align:right; }
+  .status-row{ display:flex; gap:4px; margin-top:7px; }
+  .status-pill{
+    flex:1; text-align:center; font-size: 9.5px; font-family: var(--mono); letter-spacing:0.03em;
+    padding: 3px 0; border-radius: 2px; border: 1px solid var(--border); color: var(--ink-faint);
+    background: none;
+  }
+  .status-pill.on-active{ background: var(--active-dim); border-color: var(--active); color: var(--active); }
+  .status-pill.on-paused{ background: #262238; border-color: var(--paused); color: var(--paused); }
+  .status-pill.on-blocked{ background: var(--blocked-dim); border-color: var(--blocked); color: var(--blocked); }
+  .status-pill.on-done{ background: var(--done-dim); border-color: var(--done); color: var(--done); }
+  .card.is-done{ opacity: 0.55; }
+  .card.is-done .card-title{ text-decoration: line-through; text-decoration-color: var(--ink-faint); }
+
+  /* ---------- overview grid ---------- */
+  .grid{
+    display:grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 8px;
+  }
+  .grid .card{ padding: 8px 9px 7px; }
+  .grid .card-title{ font-size: 12px; }
+
+  .finished-toggle{
+    margin: 6px 10px; font-size: 11px; color: var(--ink-faint); background:none; border:none; text-align:left;
+    padding: 2px 0;
+  }
+  .finished-toggle:hover{ color: var(--ink-dim); }
+
+  /* ---------- empty state ---------- */
+  .empty-state{
+    max-width: 420px; margin: 80px auto; text-align:center; color: var(--ink-dim);
+  }
+  .empty-state .glyph{ font-family: var(--serif); font-size: 34px; color: var(--ink-faint); margin-bottom: 10px; }
+  .empty-state p{ font-size: 13.5px; line-height:1.6; }
+
+  /* ---------- modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background: rgba(10,9,15,0.72); z-index:50;
+    display:flex; align-items:center; justify-content:center; padding: 20px;
+  }
+  .modal{
+    background: var(--bg-raised); border:1px solid var(--border); border-radius: 8px;
+    width: 100%; max-width: 420px; padding: 20px; max-height: 88vh; overflow-y:auto;
+  }
+  .modal h3{ margin:0 0 16px; font-family: var(--serif); font-size:17px; font-weight:normal; color: var(--ink); }
+  .field{ margin-bottom: 14px; }
+  .field label{ display:block; font-size: 11px; color: var(--ink-faint); margin-bottom: 5px; font-family: var(--mono); letter-spacing:0.02em; }
+  .field input[type=text], .field select, .field textarea{
+    width:100%; background: var(--bg); border:1px solid var(--border); color: var(--ink);
+    padding: 8px 10px; border-radius: var(--radius); font-size: 13px; outline:none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{ border-color: var(--ink-faint); }
+  .field textarea{ resize: vertical; min-height:50px; }
+  .sector-row{ display:flex; gap:6px; }
+  .sector-row select{ flex:1; }
+  .status-choice{ display:flex; gap:5px; flex-wrap:wrap; }
+  .status-choice button{
+    flex:1; min-width:70px; padding:7px 4px; font-size:11px; font-family: var(--mono); border-radius: var(--radius);
+    border:1px solid var(--border); background: var(--bg); color: var(--ink-dim);
+  }
+  .status-choice button.chosen{ border-width:1.5px; }
+  .status-choice button[data-s=active].chosen{ background: var(--active-dim); border-color: var(--active); color: var(--active); }
+  .status-choice button[data-s=paused].chosen{ background:#262238; border-color: var(--paused); color: var(--paused); }
+  .status-choice button[data-s=blocked].chosen{ background: var(--blocked-dim); border-color: var(--blocked); color: var(--blocked); }
+  .status-choice button[data-s=someday].chosen{ background:#232331; border-color: var(--someday); color: var(--ink-dim); }
+  .status-choice button[data-s=done].chosen{ background: var(--done-dim); border-color: var(--done); color: var(--done); }
+  .prog-edit{ display:flex; align-items:center; gap:10px; }
+  .prog-edit input[type=range]{ flex:1; }
+  .warn-banner{
+    font-size: 11.5px; color: var(--active); background: var(--active-dim); border:1px solid var(--active);
+    border-radius: var(--radius); padding:7px 9px; margin-bottom:12px; line-height:1.4;
+  }
+  .modal-actions{ display:flex; gap:8px; margin-top: 18px; }
+  .modal-actions .spacer{ flex:1; }
+  .danger{ color: var(--blocked); }
+
+  .newsector{ display:flex; gap:5px; margin-top:6px; }
+  .newsector input{ flex:1; }
+  .swatches{ display:flex; gap:5px; margin-top:6px; flex-wrap:wrap; }
+  .swatch{ width:18px; height:18px; border-radius:4px; border:2px solid transparent; cursor:pointer; }
+  .swatch.chosen{ border-color: var(--ink); }
+
+  footer{ text-align:center; padding: 16px; color: var(--ink-faint); font-size: 11px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="tick">▤</span> Stacks</div>
+  <div class="focus-chip" id="focusChip">Active <b id="focusCount">0</b>/<span id="focusLimitLabel">5</span></div>
+  <input class="search" id="search" type="text" placeholder="Search titles or sectors…">
+  <div class="viewtoggle">
+    <button id="viewLanesBtn" class="on">LANES</button>
+    <button id="viewGridBtn">OVERVIEW</button>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn ghost small" id="settingsBtn">Settings</button>
+  <button class="btn primary" id="addBtn">+ Add item</button>
+</div>
+
+<div id="board"></div>
+
+<footer>saved automatically, only visible to you</footer>
+
+<div id="modalRoot"></div>
+
+<script>
+(function(){
+  const SECTOR_COLORS = ['sector-0','sector-1','sector-2','sector-3','sector-4','sector-5','sector-6','sector-7'];
+  const STATUS_LABEL = { active:'Active', paused:'Paused', blocked:'Blocked', someday:'Someday', done:'Done' };
+  const STATUS_ORDER = { active:0, blocked:1, paused:2, someday:3, done:4 };
+
+  let state = null;
+  let currentView = 'lanes';
+  let searchTerm = '';
+  let showFinished = {}; // per lane id
+
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-'+Date.now()+'-'+Math.random().toString(16).slice(2));
+
+  function defaultState(){
+    return {
+      focusLimit: 5,
+      sectors: [
+        {id:'s1', name:'Career', color:'sector-0'},
+        {id:'s2', name:'Learning', color:'sector-2'},
+        {id:'s3', name:'Health', color:'sector-3'},
+        {id:'s4', name:'Side Projects', color:'sector-5'},
+        {id:'s5', name:'Relationships', color:'sector-1'},
+        {id:'s6', name:'Home & Admin', color:'sector-4'},
+      ],
+      items: []
+    };
+  }
+
+  async function loadState(){
+    try{
+      const res = await window.storage.get('tracker-state', false);
+      if(res && res.value){ state = JSON.parse(res.value); if(!state.focusLimit) state.focusLimit = 5; return; }
+    }catch(e){ /* not found or error */ }
+    state = defaultState();
+  }
+
+  let saveTimer = null;
+  function saveState(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async ()=>{
+      try{ await window.storage.set('tracker-state', JSON.stringify(state), false); }
+      catch(e){ console.error('save failed', e); }
+    }, 250);
+  }
+
+  function daysSince(iso){
+    return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  }
+  function relTime(iso){
+    const d = daysSince(iso);
+    if(d <= 0) return 'today';
+    if(d === 1) return 'yesterday';
+    if(d < 14) return d+'d ago';
+    const w = Math.floor(d/7);
+    if(d < 60) return w+'w ago';
+    return Math.floor(d/30)+'mo ago';
+  }
+
+  function sectorById(id){ return state.sectors.find(s=>s.id===id); }
+
+  function itemsForSector(sid){
+    let list = state.items.filter(i => i.sectorId === sid);
+    if(searchTerm){
+      list = list.filter(i => i.title.toLowerCase().includes(searchTerm) || (sectorById(i.sectorId)||{}).name.toLowerCase().includes(searchTerm));
+    }
+    return list;
+  }
+
+  function sortLane(list){
+    const active = list.filter(i=>i.status==='active').sort((a,b)=> new Date(b.updatedAt)-new Date(a.updatedAt));
+    const blocked = list.filter(i=>i.status==='blocked').sort((a,b)=> new Date(b.updatedAt)-new Date(a.updatedAt));
+    const paused = list.filter(i=>i.status==='paused').sort((a,b)=> new Date(a.updatedAt)-new Date(b.updatedAt)); // stalest first
+    const someday = list.filter(i=>i.status==='someday').sort((a,b)=> new Date(a.createdAt)-new Date(b.createdAt));
+    const done = list.filter(i=>i.status==='done').sort((a,b)=> new Date(b.updatedAt)-new Date(a.updatedAt));
+    return { open: [...active, ...blocked, ...paused, ...someday], done };
+  }
+
+  function activeCount(){ return state.items.filter(i=>i.status==='active').length; }
+
+  function esc(s){
+    const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+  }
+
+  function cardHTML(item, dense){
+    const sector = sectorById(item.sectorId);
+    const sc = sector ? `var(--${sector.color})` : 'var(--border)';
+    const stale = (item.status==='active' || item.status==='paused') && daysSince(item.updatedAt) >= 14;
+    const isDone = item.status === 'done';
+    return `
+      <div class="card${dense?' grid-card':''}${isDone?' is-done':''}" style="--sc:${sc}" data-id="${item.id}">
+        <div class="card-top">
+          <span class="status-dot" style="background:var(--${item.status})"></span>
+          <div class="card-title" data-action="edit">${esc(item.title)}</div>
+        </div>
+        <div class="card-meta">
+          <span>${esc(sector ? sector.name : '—')}</span>
+          <span>·</span>
+          <span>${relTime(item.updatedAt)}</span>
+          ${stale ? `<span class="stale-flag">· stale ${daysSince(item.updatedAt)}d</span>` : ''}
+        </div>
+        ${!isDone ? `
+        <div class="card-progress-row">
+          <input type="range" min="0" max="100" value="${item.progress}" data-action="progress" data-id="${item.id}">
+          <span class="pct">${item.progress}%</span>
+        </div>` : `<div class="card-progress-row"><span class="pct" style="color:var(--done)">finished ${relTime(item.updatedAt)}</span></div>`}
+        <div class="status-row">
+          ${['active','paused','blocked','done'].map(s => `<button class="status-pill${item.status===s?' on-'+s:''}" data-action="quickstatus" data-id="${item.id}" data-s="${s}">${STATUS_LABEL[s]}</button>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  function laneHTML(sector){
+    const all = itemsForSector(sector.id);
+    const {open, done} = sortLane(all);
+    const activeInLane = all.filter(i=>i.status==='active').length;
+    const finOpen = !!showFinished[sector.id];
+    return `
+      <div class="lane" data-sector="${sector.id}">
+        <div class="lane-head">
+          <span class="lane-tab" style="background:var(--${sector.color})"></span>
+          <span class="lane-name">${esc(sector.name)}</span>
+          <span class="lane-count">${activeInLane}⚡ / ${all.length}</span>
+        </div>
+        <div class="lane-body">
+          ${open.length ? open.map(i=>cardHTML(i,false)).join('') : `<div class="lane-empty">nothing queued here</div>`}
+          ${done.length ? `<button class="finished-toggle" data-action="togglefin" data-id="${sector.id}">${finOpen?'▾':'▸'} finished (${done.length})</button>` : ''}
+          ${finOpen ? done.map(i=>cardHTML(i,false)).join('') : ''}
+        </div>
+        <button class="lane-add" data-action="quickadd" data-id="${sector.id}">+ add to ${esc(sector.name)}</button>
+      </div>`;
+  }
+
+  function render(){
+    document.getElementById('focusCount').textContent = activeCount();
+    document.getElementById('focusLimitLabel').textContent = state.focusLimit;
+    const chip = document.getElementById('focusChip');
+    chip.classList.toggle('over', activeCount() > state.focusLimit);
+
+    const board = document.getElementById('board');
+    const totalVisible = state.items.filter(i => !searchTerm || i.title.toLowerCase().includes(searchTerm) || (sectorById(i.sectorId)||{}).name.toLowerCase().includes(searchTerm)).length;
+
+    if(state.items.length === 0){
+      board.innerHTML = `<div class="empty-state">
+        <div class="glyph">▤</div>
+        <p>Nothing on the stack yet. Add whatever you're mid-way through right now — a course, a project, a habit — and pick which part of life it belongs to.</p>
+        <div style="margin-top:16px"><button class="btn primary" id="emptyAddBtn">+ Add your first item</button></div>
+      </div>`;
+      document.getElementById('emptyAddBtn').onclick = () => openEditor(null);
+      return;
+    }
+
+    if(currentView === 'lanes'){
+      board.innerHTML = `<div class="lanes">${state.sectors.map(laneHTML).join('')}
+        <div class="lane" style="flex:0 0 180px; align-items:center; justify-content:center; display:flex; min-height:120px;">
+          <button class="btn ghost small" id="addSectorBtn">+ new sector</button>
+        </div>
+      </div>`;
+      document.getElementById('addSectorBtn').onclick = openSectorCreator;
+    } else {
+      let items = state.items.slice();
+      if(searchTerm) items = items.filter(i => i.title.toLowerCase().includes(searchTerm) || (sectorById(i.sectorId)||{}).name.toLowerCase().includes(searchTerm));
+      items.sort((a,b)=>{
+        const sa = STATUS_ORDER[a.status], sb = STATUS_ORDER[b.status];
+        if(sa !== sb) return sa - sb;
+        return new Date(b.updatedAt) - new Date(a.updatedAt);
+      });
+      board.innerHTML = `<div class="grid">${items.map(i=>cardHTML(i,true)).join('')}</div>`;
+      if(!items.length){
+        board.innerHTML = `<div class="empty-state"><p>No items match "${esc(searchTerm)}".</p></div>`;
+      }
+    }
+    bindCardEvents();
+  }
+
+  function bindCardEvents(){
+    document.querySelectorAll('[data-action="edit"]').forEach(el=>{
+      el.onclick = () => {
+        const id = el.closest('.card').dataset.id;
+        openEditor(state.items.find(i=>i.id===id));
+      };
+    });
+    document.querySelectorAll('[data-action="progress"]').forEach(el=>{
+      el.oninput = () => {
+        const item = state.items.find(i=>i.id===el.dataset.id);
+        item.progress = parseInt(el.value,10);
+        el.closest('.card').querySelector('.pct').textContent = item.progress+'%';
+      };
+      el.onchange = () => {
+        const item = state.items.find(i=>i.id===el.dataset.id);
+        item.updatedAt = new Date().toISOString();
+        if(item.progress >= 100 && item.status !== 'done'){ item.status = 'done'; }
+        if(item.progress < 100 && item.status === 'done'){ item.status = 'active'; }
+        saveState(); render();
+      };
+    });
+    document.querySelectorAll('[data-action="quickstatus"]').forEach(el=>{
+      el.onclick = () => {
+        const item = state.items.find(i=>i.id===el.dataset.id);
+        setStatus(item, el.dataset.s);
+        saveState(); render();
+      };
+    });
+    document.querySelectorAll('[data-action="togglefin"]').forEach(el=>{
+      el.onclick = () => { showFinished[el.dataset.id] = !showFinished[el.dataset.id]; render(); };
+    });
+    document.querySelectorAll('[data-action="quickadd"]').forEach(el=>{
+      el.onclick = () => openEditor(null, el.dataset.id);
+    });
+  }
+
+  function setStatus(item, s){
+    item.status = s;
+    item.updatedAt = new Date().toISOString();
+    if(s === 'done') item.progress = 100;
+    if(s !== 'done' && item.progress === 100) item.progress = 90;
+  }
+
+  // ---------- editor modal ----------
+  function openEditor(item, presetSector){
+    const isNew = !item;
+    const draft = item ? {...item} : {
+      id: uid(), title:'', sectorId: presetSector || (state.sectors[0] && state.sectors[0].id),
+      status: 'someday', progress: 0, notes:'',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = `
+      <div class="overlay" id="overlay">
+        <div class="modal">
+          <h3>${isNew ? 'New item' : 'Edit item'}</h3>
+          <div class="field">
+            <label>Title</label>
+            <input type="text" id="fTitle" value="${esc(draft.title)}" placeholder="e.g. Finish the transformers course" autofocus>
+          </div>
+          <div class="field">
+            <label>Sector</label>
+            <div class="sector-row">
+              <select id="fSector">${state.sectors.map(s=>`<option value="${s.id}" ${s.id===draft.sectorId?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+              <button class="btn small" id="fNewSector" type="button">+ sector</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Status</label>
+            <div class="status-choice" id="fStatus">
+              ${['active','paused','blocked','someday','done'].map(s=>`<button type="button" data-s="${s}" class="${draft.status===s?'chosen':''}">${STATUS_LABEL[s]}</button>`).join('')}
+            </div>
+            <div id="fWarn"></div>
+          </div>
+          <div class="field">
+            <label>Progress</label>
+            <div class="prog-edit">
+              <input type="range" id="fProgress" min="0" max="100" value="${draft.progress}">
+              <span class="pct" id="fProgressLabel">${draft.progress}%</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Notes (where you left off)</label>
+            <textarea id="fNotes" placeholder="Next concrete step, blocker, anything future-you needs...">${esc(draft.notes||'')}</textarea>
+          </div>
+          <div class="modal-actions">
+            ${!isNew ? `<button class="btn ghost danger" id="fDelete">Delete</button>` : `<span></span>`}
+            <span class="spacer"></span>
+            <button class="btn ghost" id="fCancel">Cancel</button>
+            <button class="btn primary" id="fSave">${isNew?'Add':'Save'}</button>
+          </div>
+        </div>
+      </div>`;
+
+    let chosenStatus = draft.status;
+    function updateWarn(){
+      const wrap = document.getElementById('fWarn');
+      const wouldBeActive = chosenStatus === 'active';
+      const already = item && item.status === 'active';
+      const projected = activeCount() - (already?1:0) + (wouldBeActive?1:0);
+      if(wouldBeActive && projected > state.focusLimit){
+        wrap.innerHTML = `<div class="warn-banner">That puts you at ${projected}/${state.focusLimit} active. Consider pausing something else first — this is the whole point of the limit.</div>`;
+      } else {
+        wrap.innerHTML = '';
+      }
+    }
+    updateWarn();
+
+    document.querySelectorAll('#fStatus button').forEach(b=>{
+      b.onclick = () => {
+        chosenStatus = b.dataset.s;
+        document.querySelectorAll('#fStatus button').forEach(x=>x.classList.remove('chosen'));
+        b.classList.add('chosen');
+        if(chosenStatus === 'done'){
+          document.getElementById('fProgress').value = 100;
+          document.getElementById('fProgressLabel').textContent = '100%';
+        }
+        updateWarn();
+      };
+    });
+    document.getElementById('fProgress').oninput = (e)=>{
+      document.getElementById('fProgressLabel').textContent = e.target.value+'%';
+    };
+    document.getElementById('fNewSector').onclick = () => openSectorCreator((newId)=>{
+      const sel = document.getElementById('fSector');
+      const opt = document.createElement('option');
+      opt.value = newId; opt.textContent = sectorById(newId).name; opt.selected = true;
+      sel.appendChild(opt);
+    });
+    document.getElementById('fCancel').onclick = closeModal;
+    document.getElementById('overlay').onclick = (e)=>{ if(e.target.id==='overlay') closeModal(); };
+    if(!isNew){
+      document.getElementById('fDelete').onclick = () => {
+        if(confirm('Delete "'+draft.title+'"? This cannot be undone.')){
+          state.items = state.items.filter(i=>i.id!==draft.id);
+          saveState(); closeModal(); render();
+        }
+      };
+    }
+    document.getElementById('fSave').onclick = () => {
+      const title = document.getElementById('fTitle').value.trim();
+      if(!title){ document.getElementById('fTitle').focus(); return; }
+      draft.title = title;
+      draft.sectorId = document.getElementById('fSector').value;
+      draft.status = chosenStatus;
+      draft.progress = parseInt(document.getElementById('fProgress').value,10);
+      draft.notes = document.getElementById('fNotes').value;
+      draft.updatedAt = new Date().toISOString();
+      if(draft.progress >= 100) draft.status = 'done';
+
+      if(isNew){ state.items.push(draft); }
+      else { Object.assign(item, draft); }
+      saveState(); closeModal(); render();
+    };
+  }
+
+  function closeModal(){ document.getElementById('modalRoot').innerHTML = ''; }
+
+  function openSectorCreator(onCreate){
+    const root = document.getElementById('modalRoot');
+    const wrap = document.createElement('div');
+    wrap.className = 'overlay';
+    wrap.innerHTML = `
+      <div class="modal" style="max-width:320px">
+        <h3>New sector</h3>
+        <div class="field">
+          <label>Name</label>
+          <input type="text" id="sName" placeholder="e.g. Finances">
+        </div>
+        <div class="field">
+          <label>Color</label>
+          <div class="swatches" id="sSwatches">
+            ${SECTOR_COLORS.map((c,idx)=>`<span class="swatch${idx===0?' chosen':''}" data-c="${c}" style="background:var(--${c})"></span>`).join('')}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <span class="spacer"></span>
+          <button class="btn ghost" id="sCancel">Cancel</button>
+          <button class="btn primary" id="sSave">Create</button>
+        </div>
+      </div>`;
+    root.appendChild(wrap);
+    let chosenColor = SECTOR_COLORS[0];
+    wrap.querySelectorAll('.swatch').forEach(sw=>{
+      sw.onclick = () => { chosenColor = sw.dataset.c; wrap.querySelectorAll('.swatch').forEach(x=>x.classList.remove('chosen')); sw.classList.add('chosen'); };
+    });
+    wrap.querySelector('#sCancel').onclick = () => wrap.remove();
+    wrap.onclick = (e)=>{ if(e.target===wrap) wrap.remove(); };
+    wrap.querySelector('#sSave').onclick = () => {
+      const name = wrap.querySelector('#sName').value.trim();
+      if(!name) return;
+      const id = uid();
+      state.sectors.push({id, name, color: chosenColor});
+      saveState();
+      wrap.remove();
+      render();
+      if(onCreate) onCreate(id);
+    };
+    wrap.querySelector('#sName').focus();
+  }
+
+  function openSettings(){
+    const root = document.getElementById('modalRoot');
+    const wrap = document.createElement('div');
+    wrap.className = 'overlay';
+    wrap.innerHTML = `
+      <div class="modal" style="max-width:340px">
+        <h3>Settings</h3>
+        <div class="field">
+          <label>Active-item focus limit</label>
+          <input type="text" inputmode="numeric" id="gLimit" value="${state.focusLimit}">
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost danger" id="gReset">Reset all data</button>
+          <span class="spacer"></span>
+          <button class="btn ghost" id="gCancel">Cancel</button>
+          <button class="btn primary" id="gSave">Save</button>
+        </div>
+      </div>`;
+    root.appendChild(wrap);
+    wrap.onclick = (e)=>{ if(e.target===wrap) wrap.remove(); };
+    wrap.querySelector('#gCancel').onclick = () => wrap.remove();
+    wrap.querySelector('#gReset').onclick = async () => {
+      if(confirm('This deletes every item and sector permanently. Continue?')){
+        state = defaultState();
+        saveState();
+        wrap.remove();
+        render();
+      }
+    };
+    wrap.querySelector('#gSave').onclick = () => {
+      const v = parseInt(wrap.querySelector('#gLimit').value,10);
+      if(v>0){ state.focusLimit = v; saveState(); render(); }
+      wrap.remove();
+    };
+  }
+
+  // ---------- top bar wiring ----------
+  document.getElementById('addBtn').onclick = () => openEditor(null);
+  document.getElementById('settingsBtn').onclick = openSettings;
+  document.getElementById('viewLanesBtn').onclick = () => { currentView='lanes'; document.getElementById('viewLanesBtn').classList.add('on'); document.getElementById('viewGridBtn').classList.remove('on'); render(); };
+  document.getElementById('viewGridBtn').onclick = () => { currentView='grid'; document.getElementById('viewGridBtn').classList.add('on'); document.getElementById('viewLanesBtn').classList.remove('on'); render(); };
+  document.getElementById('search').oninput = (e) => { searchTerm = e.target.value.trim().toLowerCase(); render(); };
+
+  (async function init(){
+    await loadState();
+    render();
+  })();
+})();
+</script>
+</body>
+</html>
