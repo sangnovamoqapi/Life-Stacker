@@ -25,10 +25,10 @@ export const Lane: React.FC<LaneProps> = ({ sector }) => {
   const totalOpen = openItems.length
 
   return (
-    <div className="w-[280px] shrink-0 flex flex-col lane-glass rounded-lg overflow-hidden max-h-[calc(100vh-155px)]">
+    <div className="w-[280px] shrink-0 flex flex-col lane-glass rounded-2xl overflow-hidden max-h-[calc(100vh-155px)]">
       <div className="h-[3px] w-full" style={{ backgroundColor: `var(--color-${sector.color})` }} />
       
-      <div className="px-4 py-3 flex items-center justify-between border-b border-white/[0.06] sticky top-0 z-10 bg-[#121622]/60 backdrop-blur-md">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-white/[0.06] sticky top-0 z-10 bg-transparent">
         <div className="flex items-center gap-2 truncate pr-2">
           {sector.icon && <span className="text-base shrink-0 select-none">{sector.icon}</span>}
           <h2 className="font-sans font-bold text-slate-100 text-base truncate">{sector.name}</h2>

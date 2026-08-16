@@ -9,7 +9,6 @@ export const StatsView: React.FC = () => {
   const [expandedSector, setExpandedSector] = useState<string | null>(null)
 
   useEffect(() => {
-    // In a real app, API would filter by period. For now we load all totals.
     window.api.effortLog.getTotals().then(setTotals)
   }, [period])
 
@@ -28,76 +27,83 @@ export const StatsView: React.FC = () => {
 
   return (
     <div className="flex-1 overflow-y-auto p-8">
-      <div className="max-w-3xl mx-auto space-y-8">
+      <div className="max-w-4xl mx-auto space-y-6 pb-20">
         
-        <div className="flex justify-between items-end border-b border-border-soft pb-4">
-          <h2 className="font-serif text-3xl text-ink">Effort Statistics</h2>
-          <div className="flex bg-bg-raised p-1 rounded-md border border-border-soft">
-            {(['7d', '30d', 'all'] as const).map(p => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1 text-xs font-mono rounded transition-colors ${
-                  period === p ? 'bg-border text-active' : 'text-ink-dim hover:text-ink'
-                }`}
-              >
-                {p === 'all' ? 'All time' : `Last ${p}`}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {sectorTotals.length === 0 ? (
-          <div className="text-center text-ink-faint py-12 font-serif italic text-lg">
-            No effort logged yet.
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {sectorTotals.map(sec => (
-              <div key={sec.id} className="bg-bg-raised rounded-lg border border-border overflow-hidden">
-                <div 
-                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-card-hover transition-colors"
-                  onClick={() => setExpandedSector(expandedSector === sec.id ? null : sec.id)}
+        {/* Main Stats Card */}
+        <div className="glass-panel rounded-2xl p-6 space-y-6">
+          <div className="flex justify-between items-center border-b border-white/[0.08] pb-4">
+            <div>
+              <h2 className="font-sans text-2xl font-bold text-slate-100">Effort Statistics</h2>
+              <p className="text-xs text-slate-400 mt-1">Total focused time recorded per life sector.</p>
+            </div>
+            
+            <div className="flex bg-black/30 p-1 rounded-xl border border-white/[0.08] gap-1">
+              {(['7d', '30d', 'all'] as const).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={`px-3.5 py-1 text-xs font-mono rounded-lg transition-colors capitalize ${
+                    period === p ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
                 >
-                  <div className="flex items-center gap-3 w-1/3">
-                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: `var(--color-${sec.color})` }} />
-                    <span className="font-serif text-lg text-ink font-medium truncate">{sec.name}</span>
-                  </div>
-                  
-                  <div className="flex-1 px-4">
-                    <div className="h-2 bg-bg rounded-full overflow-hidden">
-                      <div 
-                        className="h-full rounded-full transition-all duration-500" 
-                        style={{ width: `${(sec.total_hours_equiv / maxHours) * 100}%`, backgroundColor: `var(--color-${sec.color})` }} 
-                      />
+                  {p === 'all' ? 'All time' : `Last ${p}`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {sectorTotals.length === 0 ? (
+            <div className="text-center text-slate-500 py-16 font-sans italic text-sm">
+              No effort logged yet. Check off next actions or log effort to see stats here.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {sectorTotals.map(sec => (
+                <div key={sec.id} className="bg-black/30 rounded-xl border border-white/[0.06] overflow-hidden">
+                  <div 
+                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/[0.03] transition-colors"
+                    onClick={() => setExpandedSector(expandedSector === sec.id ? null : sec.id)}
+                  >
+                    <div className="flex items-center gap-3 w-1/3 min-w-0">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: `var(--color-${sec.color})` }} />
+                      <span className="font-sans text-sm font-semibold text-slate-100 truncate">{sec.name}</span>
+                    </div>
+                    
+                    <div className="flex-1 px-4">
+                      <div className="h-2 bg-white/[0.08] rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full transition-all duration-500" 
+                          style={{ width: `${(sec.total_hours_equiv / maxHours) * 100}%`, backgroundColor: `var(--color-${sec.color})` }} 
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="w-1/4 text-right font-mono text-sm font-bold text-blue-400">
+                      {sec.hours}h {sec.days > 0 ? `, ${sec.days}d` : ''}
                     </div>
                   </div>
-                  
-                  <div className="w-1/4 text-right font-mono text-sm text-ink">
-                    {sec.hours}h {sec.days > 0 ? `, ${sec.days}d` : ''}
-                  </div>
-                </div>
 
-                {expandedSector === sec.id && (
-                  <div className="bg-bg border-t border-border-soft p-4 space-y-3">
-                    {sec.items.sort((a,b) => b.total_hours - a.total_hours).map(item => (
-                      <div 
-                        key={item.item_id} 
-                        className="flex justify-between items-center text-sm cursor-pointer hover:bg-border-soft px-2 py-1 -mx-2 rounded transition-colors"
-                        onClick={() => openItemModal(item.item_id)}
-                      >
-                        <span className="text-ink-dim hover:text-ink truncate max-w-sm">{item.item_title}</span>
-                        <span className="font-mono text-ink-faint">
-                          {item.entries_hours}h {item.entries_days > 0 ? `, ${item.entries_days}d` : ''}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+                  {expandedSector === sec.id && (
+                    <div className="bg-black/40 border-t border-white/[0.06] p-4 space-y-2">
+                      {sec.items.sort((a,b) => b.total_hours - a.total_hours).map(item => (
+                        <div 
+                          key={item.item_id} 
+                          className="flex justify-between items-center text-xs cursor-pointer hover:bg-white/[0.04] p-2 rounded-lg transition-colors"
+                          onClick={() => openItemModal(item.item_id)}
+                        >
+                          <span className="text-slate-300 hover:text-blue-300 truncate max-w-md font-medium">{item.item_title}</span>
+                          <span className="font-mono text-slate-400">
+                            {item.entries_hours}h {item.entries_days > 0 ? `, ${item.entries_days}d` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
       </div>
     </div>

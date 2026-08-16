@@ -4,6 +4,7 @@ import type {
   Item,
   NewItem,
   ItemStatus,
+  ChecklistItem,
   ItemFilters,
   ActionLogEntry,
   EffortUnit,
@@ -19,6 +20,7 @@ export type {
   Item,
   NewItem,
   ItemStatus,
+  ChecklistItem,
   ItemFilters,
   ActionLogEntry,
   EffortUnit,
@@ -36,6 +38,11 @@ export interface EffortPromptState {
   itemId: string
   oldProgress: number
   newProgress: number
+}
+
+export interface ChecklistEffortPromptState {
+  itemId: string
+  checklistItem: ChecklistItem
 }
 
 export interface ToastMessage {

@@ -34,19 +34,12 @@
 }
 
 :root {
-  --glass-bg: rgba(14, 18, 26, 0.45);
-  --glass-bg-strong: rgba(18, 23, 34, 0.58);
-  --glass-blur: blur(16px);
+  --glass-opacity: 0.525;
+  --glass-blur-px: 17px;
+  --glass-bg: rgba(18, 23, 34, var(--glass-opacity));
+  --glass-blur: blur(var(--glass-blur-px));
   --glass-border: rgba(255, 255, 255, 0.08);
   accent-color: var(--color-active);
-}
-
-/* Reduce transparency mode — solid backgrounds, no blur */
-.reduce-transparency {
-  --glass-bg: #141722;
-  --glass-bg-strong: #191e2b;
-  --glass-blur: none;
-  --glass-border: rgba(255, 255, 255, 0.06);
 }
 
 @layer base {
@@ -98,48 +91,42 @@
   box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
 }
 
-/* ── Dominant card (top card in each lane) — frosted glass ── */
+/* ── Dominant card (top card in each lane) ── */
 .card-dominant {
-  @apply rounded-lg p-4;
-  background: var(--glass-bg-strong);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow:
-    0 2px 8px rgba(0,0,0,0.5),
-    0 0 20px var(--sector-glow, rgba(79,168,160,0.08));
+  @apply rounded-xl p-3.5 transition-all;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
 }
 .card-dominant:hover {
-  background: var(--glass-bg-strong);
-  filter: brightness(1.08);
-  box-shadow:
-    0 4px 14px rgba(0,0,0,0.6),
-    0 0 28px var(--sector-glow, rgba(79,168,160,0.12));
+  background: rgba(0, 0, 0, 0.32);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
 }
 
-/* ── Compact card — frosted glass ── */
+/* ── Compact card ── */
 .card-compact {
-  @apply flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer transition-colors;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  @apply flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 .card-compact:hover {
-  filter: brightness(1.12);
+  background: rgba(0, 0, 0, 0.28);
+  border-color: rgba(255, 255, 255, 0.10);
 }
 
-/* ── Lane — frosted glass ── */
+/* ── Lane — frosted glass (100% matching FocusStrip and LifeStack) ── */
 .lane-glass {
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
-/* ── Modal — frosted glass strong ── */
+/* ── Modal — frosted glass ── */
 .modal-glass {
-  background: var(--glass-bg-strong);
+  background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
@@ -147,11 +134,20 @@
 
 /* ── Focus strip tile ── */
 .focus-tile {
-  background: var(--glass-bg-strong);
+  background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
-  @apply rounded-lg p-3 flex flex-col justify-between min-h-[72px];
+  @apply rounded-xl p-3 flex flex-col justify-between min-h-[72px];
+}
+
+/* ── Generic Glass Panel (for Settings, Life Stack container, Stats) ── */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
 }
 
 /* ── Status pill fill states ── */

@@ -6,10 +6,13 @@ import type {
   ViewMode, 
   ModalType, 
   EffortPromptState, 
+  ChecklistEffortPromptState,
+  ChecklistItem,
   ToastMessage,
   NewItem,
   NewSector
 } from '../types'
+import { parseChecklist, formatChecklist } from '../utils/checklist'
 
 interface AppContextType {
   sectors: Sector[]
@@ -21,6 +24,7 @@ interface AppContextType {
   selectedSectorId: string | null
   modalType: ModalType
   effortPrompt: EffortPromptState | null
+  checklistEffortPrompt: ChecklistEffortPromptState | null
   toasts: ToastMessage[]
 
   refreshAll: () => Promise<void>
@@ -35,6 +39,7 @@ interface AppContextType {
   setUrgent: (itemId: string) => Promise<void>
   addEffort: (itemId: string, amount: number, unit: 'hours'|'days', note?: string) => Promise<void>
   updateSettings: (key: keyof AppSettings, value: unknown) => Promise<void>
+  toggleChecklistItem: (itemId: string, checklistItemId: string, completed?: boolean) => Promise<void>
   
   setSearchTerm: (term: string) => void
   setViewMode: (mode: ViewMode) => void
@@ -45,6 +50,7 @@ interface AppContextType {
   showToast: (text: string, type?: 'success' | 'info' | 'warning') => void
   dismissToast: (id: string) => void
   setEffortPrompt: (state: EffortPromptState | null) => void
+  setChecklistEffortPrompt: (state: ChecklistEffortPromptState | null) => void
 
   getItemById: (id: string) => Item | undefined
   getSectorById: (id: string) => Sector | undefined
@@ -55,7 +61,7 @@ const defaultSettings: AppSettings = {
   focus_limit: 5,
   stale_threshold_days: 14,
   launch_at_login: true,
-  reduce_transparency: false,
+  glass_intensity: 65,
   stack_review_enabled: true,
   stack_review_day: 0,
   stack_review_time: '18:00',
@@ -69,11 +75,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [items, setItems] = useState<Item[]>([])
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [searchTerm, setSearchTerm] = useState('')
-  const [viewMode, setViewMode] = useState<ViewMode>('lanes')
+  const [viewMode, setViewMode] = useState<ViewMode>('overview') // Default home page to Life Stack
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null)
   const [modalType, setModalType] = useState<ModalType>(null)
   const [effortPrompt, setEffortPrompt] = useState<EffortPromptState | null>(null)
+  const [checklistEffortPrompt, setChecklistEffortPrompt] = useState<ChecklistEffortPromptState | null>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
 
   const showToast = useCallback((text: string, type: 'success' | 'info' | 'warning' = 'info') => {
@@ -101,13 +108,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const focus_limit = (await window.api.settings.get<number>('focus_limit')) ?? 5
       const stale_threshold_days = (await window.api.settings.get<number>('stale_threshold_days')) ?? 14
       const launch_at_login = (await window.api.settings.get<boolean>('launch_at_login')) ?? true
-      const reduce_transparency = (await window.api.settings.get<boolean>('reduce_transparency')) ?? false
+      const glass_intensity = (await window.api.settings.get<number>('glass_intensity')) ?? 65
       const stack_review_enabled = (await window.api.settings.get<boolean>('stack_review_enabled')) ?? true
       const stack_review_day = (await window.api.settings.get<number>('stack_review_day')) ?? 0
       const stack_review_time = (await window.api.settings.get<string>('stack_review_time')) ?? '18:00'
       const background_config = (await window.api.settings.get<{type: 'color'|'gradient'|'image'|'video', value: string}>('background_config')) ?? { type: 'gradient', value: 'radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d' }
       
-      setSettings({ focus_limit, stale_threshold_days, launch_at_login, reduce_transparency, stack_review_enabled, stack_review_day, stack_review_time, background_config })
+      setSettings({ focus_limit, stale_threshold_days, launch_at_login, glass_intensity, stack_review_enabled, stack_review_day, stack_review_time, background_config })
     } catch (err) {
       console.error(err)
       showToast('Failed to load data', 'warning')
@@ -189,6 +196,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
+  const toggleChecklistItem = async (itemId: string, checklistItemId: string, completedOverride?: boolean) => {
+    const item = getItemById(itemId)
+    if (!item) return
+    const list = parseChecklist(item.next_action)
+    const target = list.find(c => c.id === checklistItemId)
+    if (!target) return
+
+    const newCompleted = completedOverride !== undefined ? completedOverride : !target.completed
+    target.completed = newCompleted
+
+    const updatedNextAction = formatChecklist(list)
+    await updateItem(itemId, { next_action: updatedNextAction })
+
+    if (newCompleted) {
+      setChecklistEffortPrompt({ itemId, checklistItem: { ...target } })
+    }
+  }
+
   const openItemModal = (id: string) => {
     setSelectedItemId(id)
     setModalType('item')
@@ -232,9 +257,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   return (
     <AppContext.Provider value={{
-      sectors, items, settings, searchTerm, viewMode, selectedItemId, selectedSectorId, modalType, effortPrompt, toasts,
+      sectors, items, settings, searchTerm, viewMode, selectedItemId, selectedSectorId, modalType, effortPrompt, checklistEffortPrompt, toasts,
       refreshAll, createItem, updateItem, deleteItem, createSector, updateSector, deleteSector, reorderSectors, reorderItem, setUrgent, addEffort, updateSettings,
-      setSearchTerm, setViewMode, openItemModal, openNewItemModal, openSectorModal, closeModal, showToast, dismissToast, setEffortPrompt,
+      toggleChecklistItem, setSearchTerm, setViewMode, openItemModal, openNewItemModal, openSectorModal, closeModal, showToast, dismissToast, setEffortPrompt, setChecklistEffortPrompt,
       getItemById, getSectorById, getItemsForSector
     }}>
       {children}

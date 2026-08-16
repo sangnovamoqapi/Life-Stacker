@@ -7,6 +7,7 @@ import { SettingsView } from './views/SettingsView'
 import { StatsView } from './views/StatsView'
 import { ItemModal } from './components/ItemModal'
 import { SectorModal } from './components/SectorModal'
+import { ChecklistEffortModal } from './components/ChecklistEffortModal'
 import { Toast } from './components/Toast'
 
 const MainContent: React.FC = () => {
@@ -25,18 +26,32 @@ const MainContent: React.FC = () => {
 
   React.useEffect(() => {
     if (videoRef.current) {
-      if (settings.reduce_transparency || prefersReducedMotion) {
+      if (prefersReducedMotion) {
         videoRef.current.pause()
       } else {
         videoRef.current.play().catch(() => {})
       }
     }
-  }, [settings.reduce_transparency, prefersReducedMotion, settings.background_config])
+  }, [prefersReducedMotion, settings.background_config])
 
   const getFileUri = (p: string) => `media://${encodeURIComponent(p)}`
 
+  // Amendment 6: Linked glass scale (dynamic evaluation on root)
+  const intensity = typeof settings.glass_intensity === 'number' ? settings.glass_intensity : 65
+  const opacity = Number((0.85 + (intensity / 100) * (0.35 - 0.85)).toFixed(3))
+  const blurPx = Number((4 + (intensity / 100) * (24 - 4)).toFixed(1))
+
   return (
-    <div className={`h-screen w-screen flex flex-col overflow-hidden relative selection:bg-active-dim selection:text-ink ${settings.reduce_transparency ? 'reduce-transparency' : ''}`}>
+    <div 
+      className="h-screen w-screen flex flex-col overflow-hidden relative selection:bg-active-dim selection:text-ink"
+      style={{
+        '--glass-opacity': opacity,
+        '--glass-blur-px': `${blurPx}px`,
+        '--glass-bg': `rgba(18, 23, 34, ${opacity})`,
+        '--glass-blur': `blur(${blurPx}px)`,
+        '--glass-border': 'rgba(255, 255, 255, 0.09)'
+      } as React.CSSProperties}
+    >
       {/* Background Layer */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         {settings.background_config?.type === 'video' ? (
@@ -82,6 +97,7 @@ const MainContent: React.FC = () => {
 
         {modalType === 'item' && <ItemModal />}
         {modalType === 'sector' && <SectorModal />}
+        <ChecklistEffortModal />
         
         <Toast />
       </div>

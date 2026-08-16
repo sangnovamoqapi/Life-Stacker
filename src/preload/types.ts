@@ -31,6 +31,16 @@ export interface NewSector {
 
 export type ItemStatus = 'active' | 'paused' | 'blocked' | 'queued' | 'done'
 
+export interface ChecklistItem {
+  id: string
+  text: string
+  completed: boolean
+  effortValue?: number
+  effortUnit?: 'mins' | 'hours' | 'days'
+  actualEffortValue?: number
+  actualEffortUnit?: 'mins' | 'hours' | 'days'
+}
+
 export interface Item {
   id: string
   sector_id: string
@@ -105,7 +115,7 @@ export interface AppSettings {
   focus_limit: number
   stale_threshold_days: number
   launch_at_login: boolean
-  reduce_transparency: boolean
+  glass_intensity: number
   stack_review_enabled: boolean
   stack_review_day: number
   stack_review_time: string

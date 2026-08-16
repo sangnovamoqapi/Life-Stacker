@@ -118,10 +118,23 @@ export function initDb(): void {
     { key: 'stack_review_enabled', value: JSON.stringify(true) },
     { key: 'stack_review_day', value: JSON.stringify(0) },
     { key: 'stack_review_time', value: JSON.stringify('18:00') },
-    { key: 'reduce_transparency', value: JSON.stringify(false) },
+    { key: 'glass_intensity', value: JSON.stringify(65) },
     { key: 'background_config', value: JSON.stringify({ type: 'gradient', value: `radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d` }) }
   ]
   for (const s of reviewSettings) insertSetting.run(s)
+
+  // Migration: if old reduce_transparency exists, map to glass_intensity (true -> 15, false -> 65) then delete key
+  try {
+    const oldReduce = db.prepare(`SELECT value FROM settings WHERE key = 'reduce_transparency'`).get() as { value: string } | undefined
+    if (oldReduce) {
+      const isReduced = JSON.parse(oldReduce.value) === true
+      const migratedIntensity = isReduced ? 15 : 65
+      db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('glass_intensity', ?)`).run(JSON.stringify(migratedIntensity))
+      db.prepare(`DELETE FROM settings WHERE key = 'reduce_transparency'`).run()
+    }
+  } catch (err) {
+    console.error('Migration error for reduce_transparency:', err)
+  }
 
   // Assign sequential priority_rank for items that have 0
   const unrankedItems = db.prepare('SELECT id FROM items WHERE priority_rank = 0 ORDER BY created_at ASC').all() as { id: string }[]
