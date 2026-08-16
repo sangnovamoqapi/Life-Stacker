@@ -74,7 +74,7 @@ export interface ItemFilters {
 export interface ActionLogEntry {
   id: string
   item_id: string
-  field: 'status' | 'progress' | 'notes' | 'sector_id' | 'title'
+  field: 'status' | 'progress' | 'notes' | 'sector_id' | 'title' | 'next_action'
   old_value: string | null
   new_value: string | null
   changed_at: string

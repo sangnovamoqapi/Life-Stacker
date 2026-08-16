@@ -4,6 +4,7 @@ import type { Item, ItemStatus, ActionLogEntry, EffortEntry, EffortTotal, TabTyp
 import { EffortPrompt } from './EffortPrompt'
 import { parseChecklist, formatChecklist, formatEffortBadge } from '../utils/checklist'
 import { renderSimpleMarkdown } from '../utils/markdown'
+import { formatActionLogEntry } from '../utils/historyFormatter'
 
 export const ItemModal: React.FC = () => {
   const { 
@@ -568,11 +569,9 @@ export const ItemModal: React.FC = () => {
             <div className="space-y-4 relative pl-4 border-l-2 border-white/[0.08]">
               {actionLog.map(entry => (
                 <div key={entry.id} className="relative">
-                  <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-blue-500" />
+                  <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
                   <div className="text-sm text-slate-200 mb-0.5">
-                    Changed <span className="font-mono text-blue-400 font-semibold">{entry.field}</span>
-                    {entry.old_value && <span className="text-slate-400"> from &ldquo;{entry.old_value}&rdquo;</span>}
-                    {entry.new_value && <span> to &ldquo;{entry.new_value}&rdquo;</span>}
+                    {formatActionLogEntry(entry, sectors)}
                   </div>
                   <div className="text-xs font-mono text-slate-500">
                     {new Date(entry.changed_at).toLocaleString()}
