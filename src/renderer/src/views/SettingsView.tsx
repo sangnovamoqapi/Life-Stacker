@@ -111,14 +111,17 @@ export const SettingsView: React.FC = () => {
                 <div className="w-16 h-12 rounded-lg overflow-hidden bg-black/50 border border-white/[0.10] shrink-0 flex items-center justify-center">
                   {settings.background_config?.type === 'image' ? (
                     <img 
-                      src={`media://${encodeURIComponent(settings.background_config.value)}`} 
+                      src={`media://app/${encodeURIComponent(settings.background_config.value)}`} 
                       alt="Background Preview" 
                       className="w-full h-full object-cover"
                     />
                   ) : settings.background_config?.type === 'video' ? (
                     <video 
-                      src={`media://${encodeURIComponent(settings.background_config.value)}`} 
+                      src={`media://app/${encodeURIComponent(settings.background_config.value)}`} 
+                      autoPlay
+                      loop
                       muted 
+                      playsInline
                       className="w-full h-full object-cover"
                     />
                   ) : (

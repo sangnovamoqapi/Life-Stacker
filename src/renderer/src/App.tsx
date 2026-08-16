@@ -34,7 +34,7 @@ const MainContent: React.FC = () => {
     }
   }, [prefersReducedMotion, settings.background_config])
 
-  const getFileUri = (p: string) => `media://${encodeURIComponent(p)}`
+  const getFileUri = (p: string) => `media://app/${encodeURIComponent(p)}`
 
   // Amendment 6: Linked glass scale (dynamic evaluation on root)
   const intensity = typeof settings.glass_intensity === 'number' ? settings.glass_intensity : 65

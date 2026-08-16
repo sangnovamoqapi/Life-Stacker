@@ -46,7 +46,10 @@ protocol.registerSchemesAsPrivileged([
     privileges: {
       bypassCSP: true,
       stream: true,
-      supportFetchAPI: true
+      supportFetchAPI: true,
+      standard: true,
+      secure: true,
+      corsEnabled: true
     }
   }
 ])
@@ -54,15 +57,104 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(() => {
   initDb()
 
-  protocol.handle('media', (request) => {
+  protocol.handle('media', async (request) => {
     try {
-      const filePath = request.url.replace(/^media:\/\/(\/)?/, '')
-      const decodedPath = path.normalize(decodeURIComponent(filePath))
-      const fileUrl = pathToFileURL(decodedPath).toString()
-      return net.fetch(fileUrl)
+      let rawPath = ''
+      try {
+        const parsedUrl = new URL(request.url)
+        rawPath = parsedUrl.pathname ? parsedUrl.pathname.replace(/^\//, '') : ''
+        if (!rawPath && parsedUrl.hostname) {
+          rawPath = parsedUrl.hostname
+        }
+      } catch {
+        rawPath = request.url.replace(/^media:\/\/(app\/)?/, '')
+      }
+      if (rawPath.startsWith('app/')) {
+        rawPath = rawPath.substring(4)
+      }
+      const decodedPath = path.normalize(decodeURIComponent(rawPath))
+      
+      if (!fs.existsSync(decodedPath)) {
+        return new Response('Not Found', { status: 404 })
+      }
+
+      const stat = fs.statSync(decodedPath)
+      const fileSize = stat.size
+
+      // Determine MIME type
+      const ext = path.extname(decodedPath).toLowerCase()
+      let contentType = 'application/octet-stream'
+      if (ext === '.mp4') contentType = 'video/mp4'
+      else if (ext === '.webm') contentType = 'video/webm'
+      else if (ext === '.mkv') contentType = 'video/x-matroska'
+      else if (ext === '.mov') contentType = 'video/quicktime'
+      else if (ext === '.png') contentType = 'image/png'
+      else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg'
+      else if (ext === '.webp') contentType = 'image/webp'
+      else if (ext === '.gif') contentType = 'image/gif'
+      else if (ext === '.svg') contentType = 'image/svg+xml'
+
+      const rangeHeader = request.headers.get('range')
+
+      if (rangeHeader) {
+        // Parse Range: bytes=start-end
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
+        if (match) {
+          const start = parseInt(match[1], 10)
+          const end = match[2] ? parseInt(match[2], 10) : fileSize - 1
+          const chunkSize = (end - start) + 1
+
+          const nodeStream = fs.createReadStream(decodedPath, { start, end })
+          const webStream = new ReadableStream({
+            start(controller) {
+              nodeStream.on('data', (chunk) => controller.enqueue(chunk))
+              nodeStream.on('end', () => controller.close())
+              nodeStream.on('error', (err) => controller.error(err))
+            },
+            cancel() {
+              nodeStream.destroy()
+            }
+          })
+
+          return new Response(webStream, {
+            status: 206,
+            statusText: 'Partial Content',
+            headers: {
+              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+              'Accept-Ranges': 'bytes',
+              'Content-Length': String(chunkSize),
+              'Content-Type': contentType,
+              'Access-Control-Allow-Origin': '*'
+            }
+          })
+        }
+      }
+
+      // Full content response
+      const nodeStream = fs.createReadStream(decodedPath)
+      const webStream = new ReadableStream({
+        start(controller) {
+          nodeStream.on('data', (chunk) => controller.enqueue(chunk))
+          nodeStream.on('end', () => controller.close())
+          nodeStream.on('error', (err) => controller.error(err))
+        },
+        cancel() {
+          nodeStream.destroy()
+        }
+      })
+
+      return new Response(webStream, {
+        status: 200,
+        headers: {
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(fileSize),
+          'Content-Type': contentType,
+          'Access-Control-Allow-Origin': '*'
+        }
+      })
     } catch (e) {
       console.error('Media protocol error:', e)
-      return new Response('Not Found', { status: 404 })
+      return new Response('Internal Server Error', { status: 500 })
     }
   })
 
