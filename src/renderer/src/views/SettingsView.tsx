@@ -1,9 +1,73 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAppContext } from '../state/AppContext'
 
 export const SettingsView: React.FC = () => {
   const { settings, updateSettings, sectors, reorderSectors, openSectorModal, showToast } = useAppContext()
   const [exporting, setExporting] = useState(false)
+  const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([])
+  const previewCameraRef = useRef<HTMLVideoElement>(null)
+
+  const loadCameras = async () => {
+    try {
+      // Prompt for permission if needed
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      stream.getTracks().forEach(t => t.stop())
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const cams = devices.filter(d => d.kind === 'videoinput')
+      setCameraDevices(cams)
+      return cams
+    } catch (e) {
+      console.error('Camera access failed:', e)
+      return []
+    }
+  }
+
+  useEffect(() => {
+    if (settings.background_config?.type === 'camera') {
+      loadCameras()
+    }
+  }, [settings.background_config?.type])
+
+  // Manage mini preview camera stream
+  useEffect(() => {
+    let activeStream: MediaStream | null = null
+    if (settings.background_config?.type === 'camera') {
+      const targetDeviceId = settings.background_config.value && settings.background_config.value !== 'default'
+        ? { exact: settings.background_config.value }
+        : undefined
+
+      navigator.mediaDevices.getUserMedia({
+        video: targetDeviceId ? { deviceId: targetDeviceId } : true,
+        audio: false
+      }).then(stream => {
+        activeStream = stream
+        if (previewCameraRef.current) {
+          previewCameraRef.current.srcObject = stream
+          previewCameraRef.current.play().catch(() => {})
+        }
+      }).catch(() => {})
+    }
+
+    return () => {
+      if (activeStream) {
+        activeStream.getTracks().forEach(t => t.stop())
+      }
+      if (previewCameraRef.current) {
+        previewCameraRef.current.srcObject = null
+      }
+    }
+  }, [settings.background_config?.type, settings.background_config?.value])
+
+  const enableCameraMode = async () => {
+    try {
+      const cams = await loadCameras()
+      const defaultId = cams[0]?.deviceId || 'default'
+      await updateSettings('background_config', { type: 'camera', value: defaultId })
+      showToast('Live camera background enabled!', 'success')
+    } catch {
+      showToast('Could not access camera', 'warning')
+    }
+  }
 
   const moveSector = (index: number, direction: 'up' | 'down') => {
     if (direction === 'up' && index === 0) return
@@ -108,15 +172,26 @@ export const SettingsView: React.FC = () => {
               
               {/* Background Status & Preview Card */}
               <div className="mb-3 p-3 rounded-xl bg-black/30 border border-white/[0.08] flex items-center gap-4">
-                <div className="w-16 h-12 rounded-lg overflow-hidden bg-black/50 border border-white/[0.10] shrink-0 flex items-center justify-center">
-                  {settings.background_config?.type === 'image' ? (
+                <div className="w-16 h-12 rounded-lg overflow-hidden bg-black/50 border border-white/[0.10] shrink-0 flex items-center justify-center relative">
+                  {settings.background_config?.type === 'camera' ? (
+                    <video 
+                      key="preview-camera"
+                      ref={previewCameraRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover scale-x-[-1]"
+                    />
+                  ) : settings.background_config?.type === 'image' ? (
                     <img 
+                      key={`preview-img-${settings.background_config.value}`}
                       src={`media://app/${encodeURIComponent(settings.background_config.value)}`} 
                       alt="Background Preview" 
                       className="w-full h-full object-cover"
                     />
                   ) : settings.background_config?.type === 'video' ? (
                     <video 
+                      key={`preview-vid-${settings.background_config.value}`}
                       src={`media://app/${encodeURIComponent(settings.background_config.value)}`} 
                       autoPlay
                       loop
@@ -126,6 +201,7 @@ export const SettingsView: React.FC = () => {
                     />
                   ) : (
                     <div 
+                      key="preview-gradient"
                       className="w-full h-full" 
                       style={{ background: settings.background_config?.value || 'radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), #0b0b0d' }} 
                     />
@@ -133,20 +209,59 @@ export const SettingsView: React.FC = () => {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-slate-100 truncate capitalize">
+                  <div className="text-xs font-semibold text-slate-100 truncate capitalize flex items-center gap-1.5">
+                    {settings.background_config?.type === 'camera' && (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Live Camera Feed</span>
+                      </>
+                    )}
                     {settings.background_config?.type === 'image' && 'Custom Image'}
                     {settings.background_config?.type === 'video' && 'Custom Video'}
                     {(!settings.background_config?.type || settings.background_config?.type === 'gradient' || settings.background_config?.type === 'color') && 'Default Atmospheric Gradient'}
                   </div>
-                  <div className="text-[11px] font-mono text-slate-400 truncate">
-                    {settings.background_config?.type === 'image' || settings.background_config?.type === 'video' 
+                  <div className="text-[11px] font-mono text-slate-400 truncate mt-0.5">
+                    {settings.background_config?.type === 'camera' 
+                      ? (cameraDevices.find(c => c.deviceId === settings.background_config.value)?.label || 'Active webcam stream')
+                      : settings.background_config?.type === 'image' || settings.background_config?.type === 'video' 
                       ? settings.background_config.value.split(/[\\/]/).pop() 
                       : 'Built-in dark theme styling'}
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-2 items-center">
+              {/* Camera device selector if multiple cameras available */}
+              {settings.background_config?.type === 'camera' && cameraDevices.length > 1 && (
+                <div className="mb-3 space-y-1">
+                  <label className="block text-[11px] font-mono text-slate-300">Select Camera</label>
+                  <select
+                    value={settings.background_config.value}
+                    onChange={e => updateSettings('background_config', { type: 'camera', value: e.target.value })}
+                    className="w-full bg-[#121622] border border-white/[0.12] rounded-lg px-3 py-1.5 text-xs text-slate-200 outline-none"
+                  >
+                    {cameraDevices.map((cam, idx) => (
+                      <option key={cam.deviceId || idx} value={cam.deviceId}>
+                        {cam.label || `Camera ${idx + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Background Selection Buttons */}
+              <div className="flex gap-2 items-center flex-wrap">
+                <button
+                  onClick={enableCameraMode}
+                  className={`font-semibold text-xs px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 shadow-md ${
+                    settings.background_config?.type === 'camera'
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-2 ring-emerald-400/50'
+                      : 'bg-white/[0.08] hover:bg-white/[0.15] text-slate-200 border border-white/[0.10]'
+                  }`}
+                >
+                  <span>📷</span>
+                  <span>Live Camera</span>
+                </button>
+
                 <button 
                   onClick={async () => {
                     const res = await window.api.app.pickBackground()
@@ -155,22 +270,24 @@ export const SettingsView: React.FC = () => {
                       showToast(`Background set to ${res.type}!`, 'success')
                     }
                   }}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs px-4 py-2 rounded-lg transition-colors shadow-md"
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs px-3.5 py-2 rounded-lg transition-colors shadow-md flex items-center gap-1.5"
                 >
-                  Choose File...
+                  <span>📁</span>
+                  <span>Choose File...</span>
                 </button>
+
                 <button 
                   onClick={async () => {
                     await updateSettings('background_config', { type: 'gradient', value: 'radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d' })
                     showToast('Background reset to default gradient', 'info')
                   }}
-                  className="text-xs text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg transition-colors"
+                  className="text-xs text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors"
                 >
                   Reset Default
                 </button>
               </div>
               <p className="text-xs text-slate-400 mt-2">
-                Images (PNG, JPG, WebP) and videos (MP4, WebM) are supported.
+                Live webcam, images (PNG, JPG, WebP), and videos (MP4, WebM) are supported.
               </p>
             </div>
             

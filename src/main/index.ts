@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, net, nativeImage } from 'electron'
+import { app, BrowserWindow, protocol, net, nativeImage, session } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { initDb } from './db/schema'
@@ -56,6 +56,13 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(() => {
   initDb()
+
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(true)
+  })
+  session.defaultSession.setPermissionCheckHandler(() => {
+    return true
+  })
 
   protocol.handle('media', async (request) => {
     try {

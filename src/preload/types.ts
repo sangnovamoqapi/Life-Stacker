@@ -107,8 +107,8 @@ export interface EffortTotal {
 // ──────────────────────────── Settings ────────────────────────────
 
 export interface BackgroundConfig {
-  type: 'color' | 'gradient' | 'image' | 'video'
-  value: string // hex code, gradient string, or absolute file path
+  type: 'color' | 'gradient' | 'image' | 'video' | 'camera'
+  value: string // hex code, gradient string, absolute file path, or camera deviceId
 }
 
 export interface AppSettings {
