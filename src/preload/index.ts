@@ -39,6 +39,14 @@ const api: LifeStackAPI = {
     checkStatus: () => ipcRenderer.invoke('ai:checkStatus'),
     getLastError: () => ipcRenderer.invoke('ai:getLastError')
   },
+  chat: {
+    send: (message: string) => ipcRenderer.invoke('chat:send', message),
+    listMessages: () => ipcRenderer.invoke('chat:listMessages'),
+    listPendingActions: () => ipcRenderer.invoke('chat:listPendingActions'),
+    acceptAction: (actionId: string, overrides?: Record<string, any>) => ipcRenderer.invoke('chat:acceptAction', actionId, overrides),
+    rejectAction: (actionId: string) => ipcRenderer.invoke('chat:rejectAction', actionId),
+    clearHistory: () => ipcRenderer.invoke('chat:clearHistory')
+  },
   effortLog: {
     add: (itemId: string, amount: number, unit: EffortUnit, note?: string) => ipcRenderer.invoke('effortLog:add', itemId, amount, unit, note),
     listForItem: (itemId: string) => ipcRenderer.invoke('effortLog:listForItem', itemId),

@@ -97,6 +97,23 @@ export function initDb(): void {
     CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vectors USING vec0(
       embedding float[768]
     );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      tool_calls TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_actions (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL REFERENCES chat_messages(id),
+      tool_name TEXT NOT NULL,
+      arguments TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      resolved_at TEXT
+    );
   `)
 
   // Migrations
@@ -230,7 +247,8 @@ export function initDb(): void {
     { key: 'stack_review_day', value: JSON.stringify(0) },
     { key: 'stack_review_time', value: JSON.stringify('18:00') },
     { key: 'glass_intensity', value: JSON.stringify(65) },
-    { key: 'background_config', value: JSON.stringify({ type: 'gradient', value: `radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d` }) }
+    { key: 'background_config', value: JSON.stringify({ type: 'gradient', value: `radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d` }) },
+    { key: 'chat_model', value: JSON.stringify('llama3.2:3b') }
   ]
   for (const s of reviewSettings) insertSetting.run(s)
 

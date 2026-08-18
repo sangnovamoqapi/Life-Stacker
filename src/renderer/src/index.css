@@ -60,21 +60,24 @@
     box-sizing: border-box;
   }
 
-  input, textarea, select {
+  input, textarea, select, [contenteditable="true"] {
     user-select: text !important;
     -webkit-user-select: text !important;
     cursor: text !important;
     caret-color: #3b82f6 !important;
     color: #f8fafc !important;
     pointer-events: auto !important;
+    -webkit-app-region: no-drag !important;
   }
 
   select {
     cursor: pointer !important;
+    -webkit-app-region: no-drag !important;
   }
 
   button {
     cursor: pointer;
+    -webkit-app-region: no-drag !important;
   }
 
   ::-webkit-scrollbar {

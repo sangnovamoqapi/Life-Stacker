@@ -192,6 +192,29 @@ export interface ActionStep {
   completed_at: string | null
 }
 
+// ──────────────────────────── Chat & Pending Actions ────────────────────────────
+
+export type ChatRole = 'user' | 'assistant' | 'tool' | 'system'
+
+export interface ChatMessage {
+  id: string
+  role: ChatRole
+  content: string
+  tool_calls?: string | null
+  created_at: string
+}
+
+export type PendingActionStatus = 'pending' | 'accepted' | 'rejected'
+
+export interface PendingAction {
+  id: string
+  message_id: string
+  tool_name: string
+  arguments: string
+  status: PendingActionStatus
+  resolved_at?: string | null
+}
+
 // ──────────────────────────── IPC API surface ────────────────────────────
 
 export interface LifeStackAPI {
@@ -231,6 +254,14 @@ export interface LifeStackAPI {
   ai: {
     checkStatus(): Promise<boolean>
     getLastError(): Promise<string | null>
+  }
+  chat: {
+    send(message: string): Promise<{ assistantMessage: ChatMessage; pendingActions: PendingAction[]; error?: string }>
+    listMessages(): Promise<ChatMessage[]>
+    listPendingActions(): Promise<PendingAction[]>
+    acceptAction(actionId: string, overrides?: Record<string, any>): Promise<{ success: boolean; error?: string }>
+    rejectAction(actionId: string): Promise<{ success: boolean }>
+    clearHistory(): Promise<void>
   }
   effortLog: {
     add(itemId: string, amount: number, unit: EffortUnit, note?: string): Promise<EffortEntry>

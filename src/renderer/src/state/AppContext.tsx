@@ -308,6 +308,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }
 
   const closeModal = () => {
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
     setModalType(null)
     setSelectedItemId(null)
     setSelectedSectorId(null)

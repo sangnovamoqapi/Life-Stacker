@@ -8,6 +8,7 @@ import * as edgesDb from '../db/edges'
 import * as memoryDb from '../db/memory'
 import * as actionStepsDb from '../db/action-steps'
 import * as ollamaClient from '../ai/ollama-client'
+import * as chatEngine from '../ai/chat'
 import { getDb } from '../db/connection'
 import { exportSnapshot } from '../db/export'
 import path from 'path'
@@ -55,6 +56,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('memory:search', (_, queryText, topK) => memoryDb.search(queryText, topK))
   ipcMain.handle('ai:checkStatus', () => ollamaClient.checkStatus())
   ipcMain.handle('ai:getLastError', () => ollamaClient.getLastError())
+
+  // Conversational AI & Pending Actions IPC
+  ipcMain.handle('chat:send', (_, message: string) => chatEngine.sendMessage(message))
+  ipcMain.handle('chat:listMessages', () => chatEngine.listMessages())
+  ipcMain.handle('chat:listPendingActions', () => chatEngine.listPendingActions())
+  ipcMain.handle('chat:acceptAction', (_, actionId: string, overrides?: Record<string, any>) => chatEngine.acceptAction(actionId, overrides))
+  ipcMain.handle('chat:rejectAction', (_, actionId: string) => chatEngine.rejectAction(actionId))
+  ipcMain.handle('chat:clearHistory', () => chatEngine.clearHistory())
 
   // Dev-only debug query channel (Amendment 11)
   ipcMain.handle('debug:runQuery', (_, sql: string) => {

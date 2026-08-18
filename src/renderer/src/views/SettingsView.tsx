@@ -4,6 +4,7 @@ import { useAppContext } from '../state/AppContext'
 export const SettingsView: React.FC = () => {
   const { settings, updateSettings, sectors, reorderSectors, openSectorModal, showToast } = useAppContext()
   const [exporting, setExporting] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([])
   const previewCameraRef = useRef<HTMLVideoElement>(null)
 
@@ -460,16 +461,36 @@ export const SettingsView: React.FC = () => {
             >
               {exporting ? 'Exporting...' : 'Export Snapshot'}
             </button>
-            <button 
-              onClick={() => {
-                if (confirm('Are you absolutely sure you want to reset all data? This cannot be undone.')) {
-                  showToast('Reset not yet implemented', 'info')
-                }
-              }}
-              className="bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-sm px-4 py-2 rounded-xl transition-colors"
-            >
-              Reset All Data
-            </button>
+            {showResetConfirm ? (
+              <div className="flex items-center gap-2 bg-red-500/15 border border-red-500/30 px-3 py-1.5 rounded-xl">
+                <span className="text-xs text-red-300 font-mono">Reset all data permanently?</span>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowResetConfirm(false)
+                    showToast('Reset not yet implemented', 'info')
+                  }}
+                  className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-lg transition-colors"
+                >
+                  Confirm Reset
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowResetConfirm(false)}
+                  className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button 
+                type="button"
+                onClick={() => setShowResetConfirm(true)}
+                className="bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-sm px-4 py-2 rounded-xl transition-colors"
+              >
+                Reset All Data
+              </button>
+            )}
           </div>
         </section>
 

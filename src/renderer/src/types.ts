@@ -13,6 +13,9 @@ import type {
   AppSettings,
   LifeStackAPI,
   ActionStep,
+  ChatMessage,
+  PendingAction,
+  PendingActionStatus,
 } from '../../preload/types'
 
 export type {
@@ -30,9 +33,12 @@ export type {
   AppSettings,
   LifeStackAPI,
   ActionStep,
+  ChatMessage,
+  PendingAction,
+  PendingActionStatus,
 }
 
-export type ViewMode = 'lanes' | 'overview' | 'settings' | 'stats'
+export type ViewMode = 'lanes' | 'overview' | 'settings' | 'stats' | 'chat'
 export type ModalType = 'item' | 'sector' | null
 export type TabType = 'details' | 'history' | 'effort'
 

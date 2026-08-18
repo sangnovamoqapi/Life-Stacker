@@ -100,3 +100,28 @@ This document tracks all foundational architecture, design, and engineering deci
   2. One-Time Vector Backfill: Created `backfillEmbeddings()` gated by `embeddings_version = 1` in `settings` table to re-embed all existing `memory_chunks` with `search_document:` prefix on startup.
   3. Calibrated `L2_DISTANCE_CUTOFF = 22.35` to match Nomic's task-prefixed vector space, ensuring single-word conceptual queries (like "anxious" matching "nervousness") surface reliably.
 - **Rationale**: `nomic-embed-text` requires asymmetric task prefixes to align query embeddings with document chunk embeddings. Without prefixes, short queries diverge significantly in vector space from long multi-sentence chunks.
+
+---
+
+## ADR 012: Conversational Item Management & Mandatory Human-in-the-Loop Diff Cards (Amendment 15 & 16)
+- **Date**: 2026-08-18
+- **Decision**:
+  1. Zero Direct AI DB Writes: The AI model can never modify user data autonomously. All mutating tool calls (`items:create`, `items:update`, `action_steps:create`) are intercepted, validated, and stored as `pending_actions` rows with status `'pending'`.
+  2. Native Action Steps Integration: Extended `items_create` schema with structured `action_steps: [{ content, effort_value, effort_unit }]` and added dedicated `action_steps_create` tool. The assistant structures multi-step subtasks into normalized relational `action_steps` records instead of dumping numbered text into `notes`.
+  3. Action Diff Card UI: Pending actions are rendered inline in the chat conversation as interactive Frosted-Glass Diff Cards with `Accept`, `Reject`, step checklists (`#1`, `#2`), and inline `Edit` controls (allowing direct editing, adding, or deleting steps before acceptance).
+  4. Fail-Soft Input Validation & Intelligent Fallbacks: Validates arguments against real sector IDs, progress bounds (0–100), and auto-derives titles/sectors if omitted. Invalid tool calls surface as polite chat feedback rather than broken cards.
+  5. Multi-Turn Vector Memory Search: Read-only tool calls (`memory:search`) execute directly, allowing the model to search vectors and answer queries like "What's stale in Health?" with real retrieved context.
+  6. Persistence & Atomic Transactions: Parent `chat_messages` is always inserted before child `pending_actions` inside an atomic `db.transaction()` to enforce foreign key integrity across app restarts.
+- **Rationale**: Keeps users in total control of their data while enabling conversational task management, discrete checklist parsing, natural retrieval, and inline proposal editing.
+
+---
+
+## ADR 013: Global Focus Recovery & Input Lock Prevention
+- **Date**: 2026-08-18
+- **Problem**: When a focused input, textarea, or button was unmounted or disabled (such as clicking Reject on an ActionDiffCard, canceling an inline edit, or closing a modal without saving), Chromium's `RenderWidgetHost` lost focus context, causing all typable fields across the entire application to drop keyboard input and cursor events.
+- **Decision**:
+  1. Global DOM Unmount Hook: Monkey-patched `Node.prototype.removeChild` in `main.tsx` to safely trigger `activeElement.blur()` and `window.focus()` before React detaches any currently focused DOM subtree.
+  2. Pointerdown Event Capture: Installed a global `pointerdown` listener on `document` that directly focuses any clicked `INPUT`, `TEXTAREA`, `SELECT`, or `[contenteditable]` element on pointer contact.
+  3. Action & Modal Blurs: Added explicit pre-action blurs to `handleReject`, `handleAccept`, `handleToggleEdit`, and `closeModal` before setting `isSubmitting: true` or changing component state.
+  4. CSS Hardening: Added `-webkit-app-region: no-drag !important` to all typable inputs, textareas, selects, and buttons in `index.css` to prevent OS window drag regions from capturing click and keystroke events.
+- **Rationale**: Completely eliminates orphaned focus and input locking across all component lifecycles, modal transitions, and dynamic card re-renders.

@@ -51,6 +51,33 @@ export async function checkStatus(): Promise<boolean> {
   }
 }
 
+export async function listModels(): Promise<string[]> {
+  try {
+    const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`, { cache: 'no-store' })
+    if (!res.ok) return []
+    const data = await res.json() as { models?: { name: string }[] }
+    return Array.isArray(data.models) ? data.models.map(m => m.name) : []
+  } catch {
+    return []
+  }
+}
+
+export async function getBestChatModel(preferredModel?: string): Promise<string> {
+  const models = await listModels()
+  if (preferredModel && models.some(m => m.toLowerCase() === preferredModel.toLowerCase())) {
+    return preferredModel
+  }
+  const chatCandidates = models.filter(m => !m.toLowerCase().includes('embed'))
+  if (preferredModel && chatCandidates.some(m => m.toLowerCase().includes(preferredModel.toLowerCase().split(':')[0]))) {
+    return chatCandidates.find(m => m.toLowerCase().includes(preferredModel.toLowerCase().split(':')[0]))!
+  }
+  if (chatCandidates.length > 0) {
+    const topPick = chatCandidates.find(m => m.includes('llama3.2') || m.includes('qwen2.5') || m.includes('qwen3')) || chatCandidates[0]
+    return topPick
+  }
+  return preferredModel || 'llama3.2:3b'
+}
+
 export type EmbeddingType = 'query' | 'document'
 
 export async function embed(

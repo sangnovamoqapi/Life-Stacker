@@ -124,19 +124,33 @@ export function updateItem(id: string, changes: Partial<Omit<Item, 'id' | 'creat
 export function deleteItem(id: string): void {
   const db = getDb()
   const tx = db.transaction(() => {
-    const item = db.prepare('SELECT priority_rank FROM items WHERE id = ?').get(id) as { priority_rank: number }
+    const item = db.prepare('SELECT priority_rank FROM items WHERE id = ?').get(id) as { priority_rank: number } | undefined
     if (!item) return
     
+    // 1. Delete all referencing child tables to prevent foreign key violations
+    db.prepare('DELETE FROM action_steps WHERE item_id = ?').run(id)
     db.prepare('DELETE FROM action_log WHERE item_id = ?').run(id)
     db.prepare('DELETE FROM effort_log WHERE item_id = ?').run(id)
     db.prepare('DELETE FROM edges WHERE from_item_id = ? OR to_item_id = ?').run(id, id)
+
+    // 2. Clean up vector memory chunks and embeddings
+    const chunkRows = db.prepare('SELECT vec_rowid FROM memory_chunks WHERE source_id = ?').all(id) as { vec_rowid: number }[]
+    for (const chunk of chunkRows) {
+      try {
+        db.prepare('DELETE FROM chunk_vectors WHERE rowid = ?').run(chunk.vec_rowid)
+      } catch {}
+    }
+    db.prepare('DELETE FROM memory_chunks WHERE source_id = ?').run(id)
+
+    // 3. Delete the parent item row
     db.prepare('DELETE FROM items WHERE id = ?').run(id)
 
+    // 4. Compact priority ranks
     db.prepare('UPDATE items SET priority_rank = priority_rank - 1 WHERE priority_rank > ?').run(item.priority_rank)
   })
   tx()
 
-  // Cleanup chunks in background
+  // Additional background vector sync
   upsertChunksForItem(id).catch(err => {
     console.error('[Memory] Fire-and-forget cleanup error on delete:', err)
   })

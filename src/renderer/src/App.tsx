@@ -5,6 +5,7 @@ import { LanesView } from './views/LanesView'
 import { OverviewView } from './views/OverviewView'
 import { SettingsView } from './views/SettingsView'
 import { StatsView } from './views/StatsView'
+import { ChatView } from './views/ChatView'
 import { ItemModal } from './components/ItemModal'
 import { SectorModal } from './components/SectorModal'
 import { ChecklistEffortModal } from './components/ChecklistEffortModal'
@@ -166,6 +167,7 @@ const MainContent: React.FC = () => {
         
         {viewMode === 'lanes' && <LanesView />}
         {viewMode === 'overview' && <OverviewView />}
+        {viewMode === 'chat' && <ChatView />}
         {viewMode === 'settings' && <SettingsView />}
         {viewMode === 'stats' && <StatsView />}
 
