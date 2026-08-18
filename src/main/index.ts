@@ -1,8 +1,9 @@
-import { app, BrowserWindow, protocol, net, nativeImage, session } from 'electron'
+import { app, BrowserWindow, protocol, net, nativeImage, session, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { initDb } from './db/schema'
 import { closeDb } from './db/connection'
+import { backfillEmbeddings } from './db/memory'
 import { registerIpcHandlers } from './ipc/handlers'
 import { startScheduler, stopScheduler } from './scheduler'
 import { createTray, destroyTray } from './tray'
@@ -56,6 +57,7 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(() => {
   initDb()
+  backfillEmbeddings().catch(err => console.error('[Startup Backfill Error]:', err))
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(true)
@@ -190,6 +192,39 @@ app.whenReady().then(() => {
     registerIpcHandlers(mainWindow)
     startScheduler(mainWindow)
     createTray(mainWindow)
+
+    // Standard native application menu to enable full clipboard and keyboard typing support
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: 'Edit',
+        submenu: [
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'delete' },
+          { role: 'selectAll' }
+        ]
+      },
+      {
+        label: 'View',
+        submenu: [
+          { role: 'reload' },
+          { role: 'forceReload' },
+          { role: 'toggleDevTools' },
+          { type: 'separator' },
+          { role: 'resetZoom' },
+          { role: 'zoomIn' },
+          { role: 'zoomOut' },
+          { type: 'separator' },
+          { role: 'togglefullscreen' }
+        ]
+      }
+    ]
+    const menu = Menu.buildFromTemplate(template)
+    Menu.setApplicationMenu(menu)
 
     const launchAtLogin = get<boolean>('launch_at_login') ?? true
     app.setLoginItemSettings({

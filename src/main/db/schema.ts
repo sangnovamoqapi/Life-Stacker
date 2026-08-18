@@ -52,15 +52,126 @@ export function initDb(): void {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS edges (
+      id TEXT PRIMARY KEY,
+      from_item_id TEXT NOT NULL REFERENCES items(id),
+      to_item_id TEXT NOT NULL REFERENCES items(id),
+      relation_type TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS edge_log (
+      id TEXT PRIMARY KEY,
+      edge_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      old_relation_type TEXT,
+      new_relation_type TEXT,
+      changed_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS memory_chunks (
+      id TEXT PRIMARY KEY,
+      vec_rowid INTEGER NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS action_steps (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES items(id),
+      content TEXT NOT NULL,
+      is_done INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL,
+      effort_value REAL,
+      effort_unit TEXT,
+      actual_effort_value REAL,
+      actual_effort_unit TEXT,
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vectors USING vec0(
+      embedding float[768]
+    );
   `)
 
   // Migrations
+  const stepsTableInfo = db.prepare("PRAGMA table_info('action_steps')").all() as { name: string }[]
+  if (!stepsTableInfo.some(c => c.name === 'effort_value')) {
+    db.exec(`
+      ALTER TABLE action_steps ADD COLUMN effort_value REAL;
+      ALTER TABLE action_steps ADD COLUMN effort_unit TEXT;
+      ALTER TABLE action_steps ADD COLUMN actual_effort_value REAL;
+      ALTER TABLE action_steps ADD COLUMN actual_effort_unit TEXT;
+    `)
+  }
+
   const itemsTableInfo = db.prepare("PRAGMA table_info('items')").all() as { name: string }[]
   if (!itemsTableInfo.some(c => c.name === 'priority_rank')) {
     db.exec(`
       ALTER TABLE items ADD COLUMN priority_rank INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE items ADD COLUMN next_action TEXT;
     `)
+  }
+
+  // Migrate existing items.next_action into action_steps if action_steps is empty
+  const countSteps = db.prepare('SELECT count(*) as count FROM action_steps').get() as { count: number }
+  if (countSteps.count === 0) {
+    const itemsWithNextAction = db.prepare("SELECT id, next_action FROM items WHERE next_action IS NOT NULL AND next_action != ''").all() as { id: string; next_action: string }[]
+    const insertStep = db.prepare(`
+      INSERT INTO action_steps (id, item_id, content, is_done, sort_order, created_at, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    for (const it of itemsWithNextAction) {
+      const raw = it.next_action.trim()
+      let parsedSteps: { text: string; completed: boolean }[] = []
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        try {
+          const arr = JSON.parse(raw)
+          if (Array.isArray(arr)) {
+            parsedSteps = arr.map(s => ({ text: String(s.text || ''), completed: Boolean(s.completed) }))
+          }
+        } catch {
+          // fallback
+        }
+      }
+      if (parsedSteps.length === 0) {
+        const lines = raw.split('\n').filter(l => l.trim().length > 0)
+        parsedSteps = lines.map(line => {
+          let text = line.trim()
+          let completed = false
+          if (text.startsWith('- [x] ') || text.startsWith('- [X] ')) {
+            completed = true
+            text = text.substring(6)
+          } else if (text.startsWith('- [ ] ')) {
+            completed = false
+            text = text.substring(6)
+          } else if (text.startsWith('→ ') || text.startsWith('- ') || text.startsWith('* ')) {
+            text = text.substring(2)
+          }
+          return { text, completed }
+        })
+      }
+
+      parsedSteps.forEach((s, idx) => {
+        if (!s.text.trim()) return
+        const now = new Date().toISOString()
+        insertStep.run(
+          uuid(),
+          it.id,
+          s.text.trim(),
+          s.completed ? 1 : 0,
+          idx,
+          now,
+          s.completed ? now : null
+        )
+      })
+    }
   }
 
   const sectorsTableInfo = db.prepare("PRAGMA table_info('sectors')").all() as { name: string }[]

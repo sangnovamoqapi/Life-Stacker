@@ -21,7 +21,12 @@ export const ItemModal: React.FC = () => {
     showToast,
     setUrgent,
     settings,
-    setChecklistEffortPrompt
+    setChecklistEffortPrompt,
+    getActionSteps,
+    addActionStep,
+    toggleActionStep,
+    deleteActionStep,
+    updateActionStep
   } = useAppContext()
 
   const existingItem = selectedItemId ? getItemById(selectedItemId) : undefined
@@ -32,11 +37,12 @@ export const ItemModal: React.FC = () => {
   const [status, setStatus] = useState<ItemStatus>(existingItem?.status || 'active')
   const [progress, setProgress] = useState(existingItem?.progress || 0)
   const [notes, setNotes] = useState(existingItem?.notes || '')
-  const [notesTab, setNotesTab] = useState<'edit' | 'preview'>('preview') // Default to Preview mode first
+  const [notesTab, setNotesTab] = useState<'edit' | 'preview'>(isNew || !existingItem?.notes ? 'edit' : 'preview')
   const notesTextareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Checklist state
-  const [checklist, setChecklist] = useState<ChecklistItem[]>(() => parseChecklist(existingItem?.next_action))
+  // Action steps state
+  const existingSteps = selectedItemId ? getActionSteps(selectedItemId) : []
+  const [localSteps, setLocalSteps] = useState<{ id: string; content: string; is_done: boolean; effort_value?: number | null; effort_unit?: string | null }[]>([])
   const [newStepText, setNewStepText] = useState('')
   const [newStepEffort, setNewStepEffort] = useState<number | undefined>(undefined)
   const [newStepUnit, setNewStepUnit] = useState<'mins' | 'hours' | 'days'>('hours')
@@ -59,48 +65,67 @@ export const ItemModal: React.FC = () => {
     }
   }, [selectedItemId, activeTab])
 
-  // Checklist operations
-  const handleAddStep = (e?: React.FormEvent) => {
+  // Step operations
+  const displaySteps = isNew ? localSteps : existingSteps
+
+  const handleAddStep = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    if (!newStepText.trim()) return
-    const newItem: ChecklistItem = {
-      id: `step-${Date.now()}`,
-      text: newStepText.trim(),
-      completed: false,
-      effortValue: newStepEffort && newStepEffort > 0 ? newStepEffort : undefined,
-      effortUnit: newStepUnit
+    const trimmed = newStepText.trim()
+    if (!trimmed) return
+
+    const effortOpts = newStepEffort && newStepEffort > 0 ? { effort_value: newStepEffort, effort_unit: newStepUnit } : undefined
+
+    if (isNew) {
+      setLocalSteps(prev => [...prev, { 
+        id: `temp-${Date.now()}`, 
+        content: trimmed, 
+        is_done: false,
+        effort_value: newStepEffort,
+        effort_unit: newStepEffort ? newStepUnit : undefined
+      }])
+    } else if (selectedItemId) {
+      await addActionStep(selectedItemId, trimmed, effortOpts)
     }
-    setChecklist(prev => [...prev, newItem])
     setNewStepText('')
     setNewStepEffort(undefined)
   }
 
-  const handleToggleStep = (index: number) => {
-    setChecklist(prev => {
-      const copy = [...prev]
-      const target = copy[index]
-      if (target) {
-        const newCompleted = !target.completed
-        target.completed = newCompleted
-        if (newCompleted && selectedItemId) {
-          // Open effort confirmation modal if completed
-          setChecklistEffortPrompt({ itemId: selectedItemId, checklistItem: { ...target } })
-        }
+  const handleToggleStep = async (stepId: string, idx: number) => {
+    if (isNew) {
+      setLocalSteps(prev => prev.map((s, i) => i === idx ? { ...s, is_done: !s.is_done } : s))
+    } else {
+      const target = existingSteps.find(s => s.id === stepId)
+      const willBeDone = target ? !target.is_done : true
+      await toggleActionStep(stepId)
+      if (willBeDone && selectedItemId && target) {
+        setChecklistEffortPrompt({
+          itemId: selectedItemId,
+          checklistItem: {
+            id: target.id,
+            text: target.content,
+            completed: true,
+            effortValue: target.effort_value ?? undefined,
+            effortUnit: (target.effort_unit as any) || undefined
+          }
+        })
       }
-      return copy
-    })
+    }
   }
 
-  const handleDeleteStep = (index: number) => {
-    setChecklist(prev => prev.filter((_, i) => i !== index))
+  const handleDeleteStep = async (stepId: string, idx: number) => {
+    if (isNew) {
+      setLocalSteps(prev => prev.filter((_, i) => i !== idx))
+    } else {
+      await deleteActionStep(stepId)
+    }
   }
 
-  const handleUpdateStepText = (index: number, text: string) => {
-    setChecklist(prev => {
-      const copy = [...prev]
-      if (copy[index]) copy[index].text = text
-      return copy
-    })
+  const handleUpdateStepText = async (stepId: string, idx: number, text: string) => {
+    if (isNew) {
+      setLocalSteps(prev => prev.map((s, i) => i === idx ? { ...s, content: text } : s))
+    } else {
+      await updateActionStep(stepId, { content: text })
+    }
   }
 
   // Rich text formatting helper
@@ -123,17 +148,24 @@ export const ItemModal: React.FC = () => {
     if (!title.trim()) return showToast('Title is required', 'warning')
     if (!sectorId) return showToast('Sector is required', 'warning')
 
-    const serializedNextAction = formatChecklist(checklist)
-
     if (isNew) {
       const newItem = await createItem({ 
         title: title.trim(), 
         sector_id: sectorId, 
         status, 
         progress, 
-        notes: notes.trim() || undefined, 
-        next_action: serializedNextAction || undefined 
+        notes: notes.trim() || undefined
       })
+      for (const s of localSteps) {
+        if (!s.content.trim()) continue
+        const created = await window.api.actionSteps.create(newItem.id, s.content.trim(), {
+          effort_value: s.effort_value || undefined,
+          effort_unit: s.effort_unit || undefined
+        })
+        if (s.is_done) {
+          await window.api.actionSteps.toggle(created.id)
+        }
+      }
       if (isUrgent) {
         await setUrgent(newItem.id)
       }
@@ -145,7 +177,6 @@ export const ItemModal: React.FC = () => {
       if (status !== existingItem.status) changes.status = status
       if (progress !== existingItem.progress) changes.progress = progress
       if (notes !== existingItem.notes) changes.notes = notes
-      if (serializedNextAction !== existingItem.next_action) changes.next_action = serializedNextAction
       
       if (Object.keys(changes).length > 0) {
         await updateItem(existingItem.id, changes)
@@ -251,76 +282,128 @@ export const ItemModal: React.FC = () => {
                 />
               </div>
 
-              {/* Next Action Checklist Manager */}
+              {/* Next Action Steps Spine List (Amendment 12) */}
               <div className="bg-[#0a0d14]/80 border border-white/[0.08] rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-mono text-blue-400 uppercase tracking-wider font-semibold">
-                    Next Action Steps (Checklist)
-                  </label>
-                  {checklist.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">
+                      Next Action Steps
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06]">
+                      {displaySteps.filter(s => s.is_done).length}/{displaySteps.length} done
+                    </span>
+                  </div>
+                  {displaySteps.length > 0 && (
                     <span className="text-[11px] font-mono text-slate-400">
-                      {checklist.filter(c => c.completed).length}/{checklist.length} completed
+                      {Math.round((displaySteps.filter(s => s.is_done).length / displaySteps.length) * 100)}%
                     </span>
                   )}
                 </div>
 
-                {/* Checklist items */}
-                <div className="space-y-2">
-                  {checklist.map((item, index) => (
-                    <div 
-                      key={item.id || index} 
-                      className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all ${
-                        item.completed 
-                          ? 'bg-white/[0.02] border-white/[0.04] opacity-60' 
-                          : 'bg-white/[0.04] border-white/[0.08] hover:border-white/[0.14]'
-                      }`}
-                    >
-                      {/* Dark themed custom checkbox */}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStep(index)}
-                        className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
-                          item.completed
-                            ? 'bg-blue-600 border-blue-500 text-white'
-                            : 'bg-[#121622] border-white/25 hover:border-blue-400'
-                        }`}
-                      >
-                        {item.completed && <span className="text-[10px] font-bold leading-none">✓</span>}
-                      </button>
+                {/* Steps Spine List */}
+                <div className="space-y-0 relative pl-1">
+                  {displaySteps.map((step, idx) => {
+                    const isDone = step.is_done
+                    const isFirstUndone = !isDone && displaySteps.slice(0, idx).every(s => s.is_done)
 
-                      <input
-                        type="text"
-                        value={item.text}
-                        onChange={e => handleUpdateStepText(index, e.target.value)}
-                        className={`flex-1 bg-transparent text-sm outline-none ${
-                          item.completed ? 'line-through text-slate-500' : 'text-slate-200'
-                        }`}
-                      />
-                      {item.effortValue && (
-                        <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30 shrink-0">
-                          ⏱ {formatEffortBadge(item.effortValue, item.effortUnit)}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteStep(index)}
-                        className="text-slate-500 hover:text-red-400 text-xs px-1.5 transition-colors"
-                        title="Delete step"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
+                    return (
+                      <div key={step.id} className="group relative flex items-center gap-3 py-2">
+                        {/* Vertical Spine Line */}
+                        {idx < displaySteps.length - 1 && (
+                          <div 
+                            className="absolute left-[8px] top-6 bottom-[-8px] w-0.5 transition-colors duration-200"
+                            style={{
+                              backgroundColor: isDone ? '#e8b23d' : 'rgba(255, 255, 255, 0.10)'
+                            }}
+                          />
+                        )}
+
+                        {/* Node (Circle) */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStep(step.id, idx)}
+                          className={`w-[18px] h-[18px] rounded-full shrink-0 flex items-center justify-center transition-all duration-200 z-10 cursor-pointer ${
+                            isDone
+                              ? 'bg-amber-400 border-2 border-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.4)]'
+                              : isFirstUndone
+                              ? 'border-2 border-amber-400 bg-[#0f141f] shadow-[0_0_8px_rgba(251,191,36,0.3)] hover:scale-110'
+                              : 'border-2 border-slate-600 bg-[#0f141f] hover:border-slate-400'
+                          }`}
+                          title={isDone ? 'Mark step undone' : 'Mark step done'}
+                        >
+                          {isDone && <span className="text-[10px] font-bold leading-none">✓</span>}
+                        </button>
+
+                        {/* Step Content Input */}
+                        <input
+                          type="text"
+                          value={step.content}
+                          onChange={e => handleUpdateStepText(step.id, idx, e.target.value)}
+                          className={`flex-1 bg-transparent text-sm outline-none transition-all ${
+                            isDone 
+                              ? 'line-through text-slate-500' 
+                              : isFirstUndone 
+                              ? 'font-semibold text-slate-100' 
+                              : 'text-slate-300'
+                          }`}
+                        />
+
+                        {step.effort_value && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (selectedItemId) {
+                                setChecklistEffortPrompt({
+                                  itemId: selectedItemId,
+                                  checklistItem: {
+                                    id: step.id,
+                                    text: step.content,
+                                    completed: step.is_done,
+                                    effortValue: step.effort_value ?? undefined,
+                                    effortUnit: (step.effort_unit as any) || undefined
+                                  }
+                                })
+                              }
+                            }}
+                            className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30 shrink-0 hover:bg-blue-500/25 transition-colors cursor-pointer"
+                            title="Click to log effort"
+                          >
+                            ⏱ {formatEffortBadge(step.effort_value, (step.effort_unit as any) || 'hours')}
+                          </button>
+                        )}
+
+                        {isFirstUndone && (
+                          <span className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30 shrink-0">
+                            Up Next
+                          </span>
+                        )}
+
+                        {/* Delete Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStep(step.id, idx)}
+                          className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 text-xs px-1.5 transition-opacity cursor-pointer"
+                          title="Delete step"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
 
-                {/* Add new checklist step */}
-                <form onSubmit={handleAddStep} className="flex gap-2 pt-1">
+                {/* + add step input form with optional effort estimate */}
+                <form onSubmit={handleAddStep} className="flex items-center gap-2 pt-2 border-t border-white/[0.04]">
+                  <div className="w-[18px] h-[18px] rounded-full border-2 border-dashed border-slate-600 shrink-0 flex items-center justify-center text-[10px] text-slate-500">
+                    +
+                  </div>
                   <input
                     type="text"
                     value={newStepText}
                     onChange={e => setNewStepText(e.target.value)}
-                    placeholder="Add a concrete next action step..."
-                    className="flex-1 bg-[#121622] border border-white/[0.10] rounded-lg px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-blue-500"
+                    placeholder="+ add step (press Enter)"
+                    className="flex-1 bg-transparent text-xs text-slate-200 placeholder:text-slate-600 outline-none focus:placeholder:text-slate-400 py-1"
                   />
                   <input
                     type="number"
@@ -329,13 +412,13 @@ export const ItemModal: React.FC = () => {
                     value={newStepEffort || ''}
                     onChange={e => setNewStepEffort(parseFloat(e.target.value) || undefined)}
                     placeholder="Est."
-                    className="w-16 bg-[#121622] border border-white/[0.10] rounded-lg px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-blue-500 font-mono text-center"
+                    className="w-14 bg-white/[0.04] border border-white/[0.08] rounded-md px-1.5 py-1 text-xs text-slate-200 outline-none focus:border-amber-400 font-mono text-center"
                     title="Estimated effort"
                   />
                   <select
                     value={newStepUnit}
                     onChange={e => setNewStepUnit(e.target.value as any)}
-                    className="bg-[#121622] border border-white/[0.10] rounded-lg px-2 py-1.5 text-xs text-slate-300 outline-none font-mono cursor-pointer"
+                    className="bg-white/[0.04] border border-white/[0.08] rounded-md px-1.5 py-1 text-xs text-slate-300 outline-none font-mono cursor-pointer"
                   >
                     <option value="mins">mins</option>
                     <option value="hours">hours</option>
@@ -343,7 +426,7 @@ export const ItemModal: React.FC = () => {
                   </select>
                   <button
                     type="submit"
-                    className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors shrink-0"
+                    className="text-xs text-amber-400 hover:text-amber-300 font-mono px-2.5 py-1 rounded bg-amber-400/10 border border-amber-400/20 cursor-pointer transition-colors"
                   >
                     + Add
                   </button>

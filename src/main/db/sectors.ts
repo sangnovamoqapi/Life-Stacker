@@ -16,7 +16,7 @@ export function createSector(data: NewSector): Sector {
     name: data.name,
     icon: data.icon ?? null,
     color: data.color,
-    notif_enabled: data.notif_enabled ?? 1,
+    notif_enabled: data.notif_enabled ?? true,
     notif_cadence: data.notif_cadence ?? 'daily',
     notif_interval_days: data.notif_interval_days ?? null,
     notif_weekdays: data.notif_weekdays ?? null,

@@ -8,6 +8,7 @@ import type {
   EffortPromptState, 
   ChecklistEffortPromptState,
   ChecklistItem,
+  ActionStep,
   ToastMessage,
   NewItem,
   NewSector
@@ -26,6 +27,7 @@ interface AppContextType {
   effortPrompt: EffortPromptState | null
   checklistEffortPrompt: ChecklistEffortPromptState | null
   toasts: ToastMessage[]
+  actionSteps: Record<string, ActionStep[]>
 
   refreshAll: () => Promise<void>
   createItem: (data: NewItem) => Promise<Item>
@@ -40,6 +42,13 @@ interface AppContextType {
   addEffort: (itemId: string, amount: number, unit: 'hours'|'days', note?: string) => Promise<void>
   updateSettings: (key: keyof AppSettings, value: unknown) => Promise<void>
   toggleChecklistItem: (itemId: string, checklistItemId: string, completed?: boolean) => Promise<void>
+  
+  getActionSteps: (itemId: string) => ActionStep[]
+  addActionStep: (itemId: string, content: string, options?: { effort_value?: number; effort_unit?: string }) => Promise<ActionStep>
+  toggleActionStep: (stepId: string) => Promise<ActionStep>
+  deleteActionStep: (stepId: string) => Promise<void>
+  updateActionStep: (stepId: string, changes: Partial<{ content: string; is_done: boolean; sort_order: number }>) => Promise<ActionStep>
+  reorderActionSteps: (itemId: string, stepIds: string[]) => Promise<void>
   
   setSearchTerm: (term: string) => void
   setViewMode: (mode: ViewMode) => void
@@ -82,6 +91,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [effortPrompt, setEffortPrompt] = useState<EffortPromptState | null>(null)
   const [checklistEffortPrompt, setChecklistEffortPrompt] = useState<ChecklistEffortPromptState | null>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const [actionSteps, setActionSteps] = useState<Record<string, ActionStep[]>>({})
 
   const showToast = useCallback((text: string, type: 'success' | 'info' | 'warning' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9)
@@ -97,12 +107,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const refreshAll = useCallback(async () => {
     try {
-      const [fetchedSectors, fetchedItems] = await Promise.all([
+      const [fetchedSectors, fetchedItems, fetchedSteps] = await Promise.all([
         window.api.sectors.list(),
-        window.api.items.list()
+        window.api.items.list(),
+        window.api.actionSteps.listAll()
       ])
       setSectors(fetchedSectors)
       setItems(fetchedItems)
+
+      const stepsMap: Record<string, ActionStep[]> = {}
+      fetchedSteps.forEach(s => {
+        if (!stepsMap[s.item_id]) stepsMap[s.item_id] = []
+        stepsMap[s.item_id].push(s)
+      })
+      Object.keys(stepsMap).forEach(k => {
+        stepsMap[k].sort((a, b) => a.sort_order - b.sort_order)
+      })
+      setActionSteps(stepsMap)
 
       // Settings
       const focus_limit = (await window.api.settings.get<number>('focus_limit')) ?? 5
@@ -214,6 +235,62 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }
 
+  const getActionSteps = useCallback((itemId: string) => {
+    return actionSteps[itemId] || []
+  }, [actionSteps])
+
+  const addActionStep = async (itemId: string, content: string, options?: { effort_value?: number; effort_unit?: string }) => {
+    const step = await window.api.actionSteps.create(itemId, content, options)
+    setActionSteps(prev => {
+      const list = prev[itemId] ? [...prev[itemId], step] : [step]
+      return { ...prev, [itemId]: list }
+    })
+    return step
+  }
+
+  const toggleActionStep = async (stepId: string) => {
+    const updated = await window.api.actionSteps.toggle(stepId)
+    setActionSteps(prev => {
+      const itemId = updated.item_id
+      const currentList = prev[itemId] || []
+      const newList = currentList.map(s => s.id === stepId ? updated : s)
+      return { ...prev, [itemId]: newList }
+    })
+    return updated
+  }
+
+  const deleteActionStep = async (stepId: string) => {
+    await window.api.actionSteps.delete(stepId)
+    setActionSteps(prev => {
+      const nextMap = { ...prev }
+      for (const k in nextMap) {
+        nextMap[k] = nextMap[k].filter(s => s.id !== stepId)
+      }
+      return nextMap
+    })
+  }
+
+  const updateActionStep = async (stepId: string, changes: Partial<{ content: string; is_done: boolean; sort_order: number }>) => {
+    const updated = await window.api.actionSteps.update(stepId, changes)
+    setActionSteps(prev => {
+      const itemId = updated.item_id
+      const currentList = prev[itemId] || []
+      const newList = currentList.map(s => s.id === stepId ? updated : s)
+      return { ...prev, [itemId]: newList }
+    })
+    return updated
+  }
+
+  const reorderActionSteps = async (itemId: string, stepIds: string[]) => {
+    await window.api.actionSteps.reorder(itemId, stepIds)
+    setActionSteps(prev => {
+      const currentList = prev[itemId] || []
+      const orderMap = new Map(stepIds.map((id, idx) => [id, idx]))
+      const newList = [...currentList].sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0))
+      return { ...prev, [itemId]: newList }
+    })
+  }
+
   const openItemModal = (id: string) => {
     setSelectedItemId(id)
     setModalType('item')
@@ -257,9 +334,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   return (
     <AppContext.Provider value={{
-      sectors, items, settings, searchTerm, viewMode, selectedItemId, selectedSectorId, modalType, effortPrompt, checklistEffortPrompt, toasts,
+      sectors, items, settings, searchTerm, viewMode, selectedItemId, selectedSectorId, modalType, effortPrompt, checklistEffortPrompt, toasts, actionSteps,
       refreshAll, createItem, updateItem, deleteItem, createSector, updateSector, deleteSector, reorderSectors, reorderItem, setUrgent, addEffort, updateSettings,
-      toggleChecklistItem, setSearchTerm, setViewMode, openItemModal, openNewItemModal, openSectorModal, closeModal, showToast, dismissToast, setEffortPrompt, setChecklistEffortPrompt,
+      toggleChecklistItem, getActionSteps, addActionStep, toggleActionStep, deleteActionStep, updateActionStep, reorderActionSteps,
+      setSearchTerm, setViewMode, openItemModal, openNewItemModal, openSectorModal, closeModal, showToast, dismissToast, setEffortPrompt, setChecklistEffortPrompt,
       getItemById, getSectorById, getItemsForSector
     }}>
       {children}

@@ -11,7 +11,7 @@ import { ChecklistEffortModal } from './components/ChecklistEffortModal'
 import { Toast } from './components/Toast'
 
 const MainContent: React.FC = () => {
-  const { viewMode, modalType, settings } = useAppContext()
+  const { viewMode, modalType, selectedItemId, selectedSectorId, settings } = useAppContext()
   const videoRef = React.useRef<HTMLVideoElement>(null)
   const cameraVideoRef = React.useRef<HTMLVideoElement>(null)
   const [prefersReducedMotion, setPrefersReducedMotion] = React.useState(false)
@@ -100,7 +100,7 @@ const MainContent: React.FC = () => {
 
   return (
     <div 
-      className="h-screen w-screen flex flex-col overflow-hidden relative selection:bg-active-dim selection:text-ink"
+      className="h-screen w-screen flex flex-col overflow-hidden relative"
       style={{
         '--glass-opacity': opacity,
         '--glass-blur-px': `${blurPx}px`,
@@ -169,8 +169,8 @@ const MainContent: React.FC = () => {
         {viewMode === 'settings' && <SettingsView />}
         {viewMode === 'stats' && <StatsView />}
 
-        {modalType === 'item' && <ItemModal />}
-        {modalType === 'sector' && <SectorModal />}
+        {modalType === 'item' && <ItemModal key={selectedItemId || 'new-item'} />}
+        {modalType === 'sector' && <SectorModal key={selectedSectorId || 'new-sector'} />}
         <ChecklistEffortModal />
         
         <Toast />

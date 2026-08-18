@@ -19,6 +19,7 @@ export const SectorModal: React.FC = () => {
   
   const [weekdays, setWeekdays] = useState<number[]>(() => {
     if (existingSector?.notif_weekdays) {
+      if (Array.isArray(existingSector.notif_weekdays)) return existingSector.notif_weekdays
       try { return JSON.parse(existingSector.notif_weekdays) } catch { return [] }
     }
     return []

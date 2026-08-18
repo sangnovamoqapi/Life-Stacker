@@ -7,6 +7,7 @@ interface CardProps {
   item: Item
   sector: Sector
   isDominant?: boolean
+  isSemanticMatch?: boolean
 }
 
 function daysSince(dateStr: string) {
@@ -31,8 +32,8 @@ const statusColors: Record<ItemStatus, string> = {
   queued: '#64748b'
 }
 
-export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false }) => {
-  const { updateItem, openItemModal, settings, setEffortPrompt, toggleChecklistItem } = useAppContext()
+export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, isSemanticMatch = false }) => {
+  const { updateItem, openItemModal, settings, setEffortPrompt, setChecklistEffortPrompt, getActionSteps, toggleActionStep } = useAppContext()
   const progressRef = useRef<HTMLInputElement>(null)
   
   const daysUntouched = daysSince(item.updated_at)
@@ -100,6 +101,14 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false }) 
         <div className="flex items-center gap-1.5">
           <span className="text-slate-500 text-xs select-none">⠿</span>
           <span className="text-xs font-mono font-bold text-slate-300">{rankLabel}</span>
+          {isSemanticMatch && (
+            <span 
+              className="text-[10px] font-bold text-amber-400 bg-amber-400/15 px-1.5 py-0.2 rounded border border-amber-400/30 cursor-help"
+              title="related to your search"
+            >
+              ✦
+            </span>
+          )}
         </div>
         
         {/* Status Badge */}
@@ -122,43 +131,68 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false }) 
         {item.title}
       </h3>
 
-      {/* Prominent Next Action Checklist */}
-      {checklist.length > 0 && (
-        <div className="space-y-1.5 mb-3 bg-black/25 border border-blue-500/20 rounded-xl p-2.5" onClick={e => e.stopPropagation()}>
-          <div className="text-[10px] font-mono uppercase tracking-wider text-blue-400 font-semibold mb-1 flex justify-between">
-            <span>Next Action</span>
-            <span>{checklist.filter(c => c.completed).length}/{checklist.length}</span>
-          </div>
-          {checklist.map(step => (
-            <div 
-              key={step.id} 
-              className={`flex items-center gap-2 text-xs transition-colors py-0.5 ${
-                step.completed ? 'text-slate-500 line-through' : 'text-slate-200'
-              }`}
-            >
-              {/* Dark custom checkbox */}
-              <button
-                type="button"
-                onClick={() => toggleChecklistItem(item.id, step.id)}
-                className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors shrink-0 ${
-                  step.completed
-                    ? 'bg-blue-600 border-blue-500 text-white'
-                    : 'bg-[#121622] border-white/25 hover:border-blue-400'
-                }`}
-              >
-                {step.completed && <span className="text-[9px] font-bold leading-none">✓</span>}
-              </button>
+      {/* Compact Step-Card Up-Next Line for Dominant Card */}
+      {(() => {
+        const itemSteps = getActionSteps(item.id)
+        const total = itemSteps.length
+        const doneCount = itemSteps.filter(s => s.is_done).length
+        const currentStep = itemSteps.find(s => !s.is_done)
 
-              <span className="flex-1 truncate">{step.text}</span>
-              {step.effortValue && (
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-300 border border-blue-500/25 shrink-0">
-                  ⏱ {formatEffortBadge(step.effortValue, step.effortUnit)}
-                </span>
-              )}
+        if (total === 0) return null
+
+        return (
+          <div 
+            className="mb-3 bg-black/25 border border-white/[0.08] hover:border-amber-500/30 rounded-xl p-2.5 transition-all"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1.5">
+              <span className="uppercase tracking-wider text-amber-400 font-semibold flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Up Next
+              </span>
+              <span className="font-medium text-slate-400">{doneCount}/{total} done</span>
             </div>
-          ))}
-        </div>
-      )}
+
+            {currentStep ? (
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const toggled = await toggleActionStep(currentStep.id)
+                    if (toggled.is_done) {
+                      setChecklistEffortPrompt({
+                        itemId: item.id,
+                        checklistItem: {
+                          id: currentStep.id,
+                          text: currentStep.content,
+                          completed: true,
+                          effortValue: currentStep.effort_value ?? undefined,
+                          effortUnit: (currentStep.effort_unit as any) || undefined
+                        }
+                      })
+                    }
+                  }}
+                  className="w-4 h-4 rounded-full border-2 border-amber-400/80 hover:border-amber-300 hover:bg-amber-400/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                  title="Click to complete step"
+                />
+                <span className="text-xs font-semibold text-slate-100 truncate flex-1">
+                  {currentStep.content}
+                </span>
+                {currentStep.effort_value && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25 shrink-0">
+                    ⏱ {formatEffortBadge(currentStep.effort_value, (currentStep.effort_unit as any) || 'hours')}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-emerald-400 font-medium">
+                <span>✓</span>
+                <span>All steps completed</span>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Meta row */}
       <div className="flex items-center gap-2 text-xs text-slate-400 mb-2.5">

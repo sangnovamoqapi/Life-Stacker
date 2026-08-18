@@ -21,7 +21,7 @@ export function startScheduler(mainWindow: BrowserWindow): void {
     let mapUpdated = false
 
     for (const sector of sectors) {
-      if (sector.notif_enabled !== 1) continue
+      if (!sector.notif_enabled) continue
       if (sector.notif_time !== currentTime) continue
 
       let shouldNotify = false
@@ -44,7 +44,9 @@ export function startScheduler(mainWindow: BrowserWindow): void {
         }
       } else if (sector.notif_cadence === 'weekdays') {
         try {
-          const daysArray = JSON.parse(sector.notif_weekdays || '[]')
+          const daysArray = Array.isArray(sector.notif_weekdays)
+            ? sector.notif_weekdays
+            : (typeof sector.notif_weekdays === 'string' ? JSON.parse(sector.notif_weekdays) : [])
           if (Array.isArray(daysArray) && daysArray.includes(currentDayOfWeek)) {
             if (lastNotifiedMap[sector.id] !== todayStr) {
               shouldNotify = true

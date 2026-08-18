@@ -1,6 +1,7 @@
 import { getDb } from './connection'
 import { v4 as uuid } from 'uuid'
-import type { Item, NewItem, ItemFilters, ItemStatus } from '../../preload/types'
+import type { Item, NewItem, ItemFilters } from '../../preload/types'
+import { upsertChunksForItem } from './memory'
 
 export function listItems(filters?: ItemFilters): Item[] {
   const db = getDb()
@@ -47,6 +48,11 @@ export function createItem(data: NewItem): Item {
     INSERT INTO items (id, sector_id, title, status, progress, notes, priority_rank, next_action, created_at, updated_at)
     VALUES (@id, @sector_id, @title, @status, @progress, @notes, @priority_rank, @next_action, @created_at, @updated_at)
   `).run(item)
+
+  // Fire-and-forget vector embedding without blocking save
+  upsertChunksForItem(item.id).catch(err => {
+    console.error('[Memory] Fire-and-forget embed error on create:', err)
+  })
 
   return item
 }
@@ -107,6 +113,11 @@ export function updateItem(id: string, changes: Partial<Omit<Item, 'id' | 'creat
     return updated
   })()
 
+  // Fire-and-forget vector embedding without blocking save
+  upsertChunksForItem(result.id).catch(err => {
+    console.error('[Memory] Fire-and-forget embed error on update:', err)
+  })
+
   return result
 }
 
@@ -118,11 +129,17 @@ export function deleteItem(id: string): void {
     
     db.prepare('DELETE FROM action_log WHERE item_id = ?').run(id)
     db.prepare('DELETE FROM effort_log WHERE item_id = ?').run(id)
+    db.prepare('DELETE FROM edges WHERE from_item_id = ? OR to_item_id = ?').run(id, id)
     db.prepare('DELETE FROM items WHERE id = ?').run(id)
 
     db.prepare('UPDATE items SET priority_rank = priority_rank - 1 WHERE priority_rank > ?').run(item.priority_rank)
   })
   tx()
+
+  // Cleanup chunks in background
+  upsertChunksForItem(id).catch(err => {
+    console.error('[Memory] Fire-and-forget cleanup error on delete:', err)
+  })
 }
 
 export function reorderItem(itemId: string, newRank: number): void {

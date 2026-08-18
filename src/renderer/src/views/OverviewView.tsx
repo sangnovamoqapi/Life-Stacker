@@ -3,6 +3,7 @@ import { useAppContext } from '../state/AppContext'
 import type { Item, ItemStatus } from '../types'
 import { parseChecklist, formatEffortBadge } from '../utils/checklist'
 import { renderSimpleMarkdown } from '../utils/markdown'
+import { useHybridSearch } from '../hooks/useHybridSearch'
 
 function relativeTime(dateStr: string) {
   const d = new Date(dateStr)
@@ -48,27 +49,27 @@ const statusBadgeStyles: Record<string, { bg: string; text: string; border: stri
 }
 
 export const OverviewView: React.FC = () => {
-  const { items, sectors, searchTerm, openItemModal, reorderItem, showToast, toggleChecklistItem } = useAppContext()
+  const { items, sectors, actionSteps, searchTerm, openItemModal, reorderItem, showToast, toggleChecklistItem } = useAppContext()
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
+  const { combinedItems, semanticMatchedIds, isSearching } = useHybridSearch(items, sectors, actionSteps, searchTerm)
+
   const rankedItems = useMemo(() => {
-    let result = [...items].sort((a, b) => a.priority_rank - b.priority_rank)
+    let result: Item[]
+    if (isSearching) {
+      result = combinedItems
+    } else {
+      result = [...items].sort((a, b) => a.priority_rank - b.priority_rank)
+    }
+
     if (statusFilter !== 'ALL') {
       result = result.filter(item => item.status.toUpperCase() === statusFilter)
     }
-    if (searchTerm) {
-      const lower = searchTerm.toLowerCase()
-      result = result.filter(item => {
-        const sector = sectors.find(s => s.id === item.sector_id)
-        return item.title.toLowerCase().includes(lower) || 
-               (sector && sector.name.toLowerCase().includes(lower))
-      })
-    }
     return result
-  }, [items, sectors, searchTerm, statusFilter])
+  }, [items, combinedItems, isSearching, statusFilter])
 
   const handleDragStart = (e: React.DragEvent, item: Item) => {
     setDraggedId(item.id)
@@ -193,7 +194,17 @@ export const OverviewView: React.FC = () => {
                           >
                             ⠿
                           </span>
-                          <span className="font-mono text-xs font-bold text-slate-300 min-w-[24px]">#{item.priority_rank}</span>
+                          <span className="font-mono text-xs font-bold text-slate-300 min-w-[24px] flex items-center gap-1">
+                            #{item.priority_rank}
+                            {semanticMatchedIds.has(item.id) && (
+                              <span 
+                                className="text-[10px] font-bold text-amber-400 bg-amber-400/15 px-1 py-0.2 rounded border border-amber-400/30 cursor-help"
+                                title="related to your search"
+                              >
+                                ✦
+                              </span>
+                            )}
+                          </span>
                           
                           {/* Glassy Chevron Button */}
                           <button

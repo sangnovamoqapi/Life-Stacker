@@ -1,11 +1,49 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAppContext } from '../state/AppContext'
 
 export const TopBar: React.FC = () => {
   const { viewMode, setViewMode, searchTerm, setSearchTerm, items, settings, openNewItemModal } = useAppContext()
+  const [aiReady, setAiReady] = useState<boolean | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    const checkAi = async () => {
+      try {
+        const ready = await window.api.ai.checkStatus()
+        const lastErr = await window.api.ai.getLastError()
+        if (isMounted) {
+          setAiReady(ready)
+          setAiError(lastErr)
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          setAiReady(false)
+          setAiError(err?.message || 'Cannot reach AI service')
+        }
+      }
+    }
+
+    checkAi()
+    const interval = setInterval(checkAi, 5000)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
+  }, [])
 
   const activeCount = items.filter(i => i.status === 'active').length
   const overLimit = activeCount > settings.focus_limit
+
+  const getStatusTooltip = () => {
+    if (aiReady) {
+      return 'AI: Ready (nomic-embed-text connected)'
+    }
+    if (aiError) {
+      return `AI: Offline — ${aiError}`
+    }
+    return 'AI: Checking connection...'
+  }
 
   return (
     <div className="sticky top-0 z-20 bg-[#0d1017]/80 backdrop-blur-md border-b border-white/[0.08] h-14 flex items-center px-6 justify-between shrink-0 gap-4">
@@ -49,8 +87,23 @@ export const TopBar: React.FC = () => {
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Actions & Status */}
       <div className="flex items-center gap-3 shrink-0">
+        {/* Minimal AI Status Indicator with dynamic error tooltip */}
+        <div 
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono border border-white/[0.08] bg-white/[0.03] select-none cursor-help transition-all"
+          title={getStatusTooltip()}
+        >
+          <div className={`w-1.5 h-1.5 rounded-full transition-colors ${
+            aiReady 
+              ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' 
+              : 'bg-rose-400/80'
+          }`} />
+          <span className={aiReady ? 'text-slate-300 font-medium' : 'text-slate-400'}>
+            AI {aiReady ? 'Ready' : 'Offline'}
+          </span>
+        </div>
+
         {/* View Switcher Pill Segment */}
         <div className="flex bg-[#131722]/80 p-1 rounded-full border border-white/[0.08] gap-0.5">
           {(['overview', 'lanes', 'stats'] as const).map(mode => {

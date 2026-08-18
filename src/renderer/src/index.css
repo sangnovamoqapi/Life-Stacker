@@ -60,6 +60,23 @@
     box-sizing: border-box;
   }
 
+  input, textarea, select {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    cursor: text !important;
+    caret-color: #3b82f6 !important;
+    color: #f8fafc !important;
+    pointer-events: auto !important;
+  }
+
+  select {
+    cursor: pointer !important;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -72,10 +89,6 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-ink-faint;
-  }
-
-  ::selection {
-    @apply bg-active-dim text-ink;
   }
 }
 

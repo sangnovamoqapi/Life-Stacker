@@ -12,6 +12,7 @@ import type {
   EffortTotal,
   AppSettings,
   LifeStackAPI,
+  ActionStep,
 } from '../../preload/types'
 
 export type {
@@ -28,6 +29,7 @@ export type {
   EffortTotal,
   AppSettings,
   LifeStackAPI,
+  ActionStep,
 }
 
 export type ViewMode = 'lanes' | 'overview' | 'settings' | 'stats'

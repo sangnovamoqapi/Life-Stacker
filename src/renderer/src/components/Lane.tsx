@@ -3,21 +3,22 @@ import { Card } from './Card'
 import { useAppContext } from '../state/AppContext'
 import type { Sector } from '../types'
 
+import { useHybridSearch } from '../hooks/useHybridSearch'
+
 interface LaneProps {
   sector: Sector
 }
 
 export const Lane: React.FC<LaneProps> = ({ sector }) => {
-  const { getItemsForSector, searchTerm } = useAppContext()
+  const { getItemsForSector, sectors, items, actionSteps, searchTerm } = useAppContext()
   const [showDone, setShowDone] = useState(false)
 
-  const allItems = getItemsForSector(sector.id)
-  
-  const filteredItems = allItems.filter(item => {
-    if (!searchTerm) return true
-    return item.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-           sector.name.toLowerCase().includes(searchTerm.toLowerCase())
-  })
+  const allSectorItems = getItemsForSector(sector.id)
+  const { combinedItems, semanticMatchedIds, isSearching } = useHybridSearch(items, sectors, actionSteps, searchTerm)
+
+  const filteredItems = isSearching 
+    ? combinedItems.filter(item => item.sector_id === sector.id)
+    : allSectorItems
 
   const openItems = filteredItems.filter(i => i.status !== 'done')
   const doneItems = filteredItems.filter(i => i.status === 'done')
@@ -38,7 +39,13 @@ export const Lane: React.FC<LaneProps> = ({ sector }) => {
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1 relative">
         {openItems.map((item, idx) => (
-          <Card key={item.id} item={item} sector={sector} isDominant={idx === 0} />
+          <Card 
+            key={item.id} 
+            item={item} 
+            sector={sector} 
+            isDominant={idx === 0} 
+            isSemanticMatch={semanticMatchedIds.has(item.id)}
+          />
         ))}
         
         {openItems.length === 0 && doneItems.length === 0 && !searchTerm && (
@@ -61,7 +68,13 @@ export const Lane: React.FC<LaneProps> = ({ sector }) => {
             {showDone && (
               <div className="mt-1 space-y-1 pl-1">
                 {doneItems.map(item => (
-                  <Card key={item.id} item={item} sector={sector} isDominant={false} />
+                  <Card 
+                    key={item.id} 
+                    item={item} 
+                    sector={sector} 
+                    isDominant={false} 
+                    isSemanticMatch={semanticMatchedIds.has(item.id)}
+                  />
                 ))}
               </div>
             )}

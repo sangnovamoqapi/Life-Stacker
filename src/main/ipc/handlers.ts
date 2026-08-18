@@ -4,6 +4,11 @@ import * as itemsDb from '../db/items'
 import * as actionLogDb from '../db/action-log'
 import * as effortLogDb from '../db/effort-log'
 import * as settingsDb from '../db/settings'
+import * as edgesDb from '../db/edges'
+import * as memoryDb from '../db/memory'
+import * as actionStepsDb from '../db/action-steps'
+import * as ollamaClient from '../ai/ollama-client'
+import { getDb } from '../db/connection'
 import { exportSnapshot } from '../db/export'
 import path from 'path'
 import fs from 'fs'
@@ -15,6 +20,15 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('items:delete', (_, id) => itemsDb.deleteItem(id))
   ipcMain.handle('items:reorder', (_, itemId, newRank) => itemsDb.reorderItem(itemId, newRank))
   ipcMain.handle('items:setUrgent', (_, itemId) => itemsDb.setUrgent(itemId))
+
+  // Action Steps (Checklist) IPC
+  ipcMain.handle('actionSteps:list', (_, itemId) => actionStepsDb.listStepsForItem(itemId))
+  ipcMain.handle('actionSteps:listAll', () => actionStepsDb.listAllSteps())
+  ipcMain.handle('actionSteps:create', (_, itemId, content, options) => actionStepsDb.createStep(itemId, content, options))
+  ipcMain.handle('actionSteps:update', (_, id, changes) => actionStepsDb.updateStep(id, changes))
+  ipcMain.handle('actionSteps:toggle', (_, id) => actionStepsDb.toggleStep(id))
+  ipcMain.handle('actionSteps:delete', (_, id) => actionStepsDb.deleteStep(id))
+  ipcMain.handle('actionSteps:reorder', (_, itemId, stepIds) => actionStepsDb.reorderSteps(itemId, stepIds))
 
   ipcMain.handle('sectors:list', () => sectorsDb.listSectors())
   ipcMain.handle('sectors:create', (_, data) => sectorsDb.createSector(data))
@@ -30,6 +44,35 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('settings:get', (_, key) => settingsDb.get(key))
   ipcMain.handle('settings:set', (_, key, value) => settingsDb.set(key, value))
+
+  // Graph Edges IPC
+  ipcMain.handle('edges:create', (_, data) => edgesDb.createEdge(data))
+  ipcMain.handle('edges:list', (_, itemId) => edgesDb.listEdgesForItem(itemId))
+  ipcMain.handle('edges:delete', (_, edgeId) => edgesDb.deleteEdge(edgeId))
+  ipcMain.handle('edges:retype', (_, edgeId, newRelationType) => edgesDb.retypeEdge(edgeId, newRelationType))
+
+  // Vector Memory & AI status IPC
+  ipcMain.handle('memory:search', (_, queryText, topK) => memoryDb.search(queryText, topK))
+  ipcMain.handle('ai:checkStatus', () => ollamaClient.checkStatus())
+  ipcMain.handle('ai:getLastError', () => ollamaClient.getLastError())
+
+  // Dev-only debug query channel (Amendment 11)
+  ipcMain.handle('debug:runQuery', (_, sql: string) => {
+    if (app.isPackaged) return []
+    const db = getDb()
+    try {
+      const stmt = db.prepare(sql)
+      if (stmt.reader) {
+        return stmt.all()
+      } else {
+        const info = stmt.run()
+        return [info]
+      }
+    } catch (err: any) {
+      console.error('[Debug Query Error]:', err)
+      return [{ error: err?.message || String(err) }]
+    }
+  })
 
   ipcMain.handle('data:exportSnapshot', async () => {
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
