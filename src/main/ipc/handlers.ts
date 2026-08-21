@@ -33,6 +33,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // Next Items IPC
   ipcMain.handle('nextItems:list', (_, filters) => nextItemsDb.listNextItems(filters))
   ipcMain.handle('nextItems:create', (_, data) => nextItemsDb.createNextItem(data))
+  ipcMain.handle('nextItems:createBatch', (_, items) => nextItemsDb.createNextItemsBatch(items))
   ipcMain.handle('nextItems:update', (_, id, changes) => nextItemsDb.updateNextItem(id, changes))
   ipcMain.handle('nextItems:toggle', (_, id) => nextItemsDb.toggleNextItem(id))
   ipcMain.handle('nextItems:promoteToToday', (_, id) => nextItemsDb.promoteToToday(id))
@@ -92,6 +93,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('memory:reindexAll', () => memoryDb.reindexAllVectorMemory())
   ipcMain.handle('ai:checkStatus', () => ollamaClient.checkStatus())
   ipcMain.handle('ai:getLastError', () => ollamaClient.getLastError())
+  ipcMain.handle('ai:generateNextFromExplore', (_, title: string, notes: string) => ollamaClient.generateDraftNextItems(title, notes))
 
   // Conversational AI & Pending Actions IPC
   ipcMain.handle('chat:send', (_, message: string) => chatEngine.sendMessage(message))

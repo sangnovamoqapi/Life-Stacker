@@ -123,6 +123,62 @@ export function createNextItem(data: NewNextItem): NextItem {
   return created
 }
 
+export function createNextItemsBatch(items: NewNextItem[]): NextItem[] {
+  if (items.length === 0) return []
+  const db = getDb()
+  const now = new Date().toISOString()
+  const createdList: NextItem[] = []
+  const affectedEpicIds = new Set<string>()
+
+  const insert = db.prepare(`
+    INSERT INTO next_items (
+      id, epic_id, parent_explore_id, title, notes, status,
+      time_estimate_value, time_estimate_unit, actual_effort_value, actual_effort_unit,
+      due_date, sort_order, created_at, completed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  db.transaction(() => {
+    for (const data of items) {
+      const id = uuid()
+      let sortOrder = data.sort_order
+      if (sortOrder === undefined || sortOrder === null) {
+        const maxOrderRow = db.prepare('SELECT MAX(sort_order) as max_order FROM next_items WHERE epic_id = ?').get(data.epic_id) as { max_order: number | null }
+        sortOrder = (maxOrderRow?.max_order ?? -1) + 1
+      }
+      const status: NextItemStatus = data.status || 'next'
+      const completedAt = status === 'done' ? now : null
+
+      insert.run(
+        id,
+        data.epic_id,
+        data.parent_explore_id || null,
+        data.title,
+        data.notes || null,
+        status,
+        data.time_estimate_value ?? null,
+        data.time_estimate_unit ?? null,
+        null,
+        null,
+        data.due_date || null,
+        sortOrder,
+        now,
+        completedAt
+      )
+
+      const created = getNextItemById(id)
+      if (created) createdList.push(created)
+      affectedEpicIds.add(data.epic_id)
+    }
+  })()
+
+  for (const epicId of affectedEpicIds) {
+    upsertChunksForItem(epicId).catch(() => {})
+  }
+
+  return createdList
+}
+
 export function updateNextItem(
   id: string,
   changes: Partial<Omit<NextItem, 'id' | 'epic_id' | 'created_at'>>

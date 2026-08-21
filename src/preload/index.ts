@@ -20,6 +20,7 @@ const api: LifeStackAPI = {
   nextItems: {
     list: (filters?: { epic_id?: string; status?: NextItemStatus; parent_explore_id?: string }) => ipcRenderer.invoke('nextItems:list', filters),
     create: (data: NewNextItem) => ipcRenderer.invoke('nextItems:create', data),
+    createBatch: (items: NewNextItem[]) => ipcRenderer.invoke('nextItems:createBatch', items),
     update: (id: string, changes: any) => ipcRenderer.invoke('nextItems:update', id, changes),
     toggle: (id: string) => ipcRenderer.invoke('nextItems:toggle', id),
     promoteToToday: (id: string) => ipcRenderer.invoke('nextItems:promoteToToday', id),
@@ -55,7 +56,8 @@ const api: LifeStackAPI = {
   },
   ai: {
     checkStatus: () => ipcRenderer.invoke('ai:checkStatus'),
-    getLastError: () => ipcRenderer.invoke('ai:getLastError')
+    getLastError: () => ipcRenderer.invoke('ai:getLastError'),
+    generateNextFromExplore: (title: string, notes: string) => ipcRenderer.invoke('ai:generateNextFromExplore', title, notes)
   },
   chat: {
     send: (message: string) => ipcRenderer.invoke('chat:send', message),

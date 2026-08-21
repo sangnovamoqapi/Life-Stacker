@@ -9,6 +9,13 @@ import { formatActionLogEntry } from '../utils/historyFormatter'
 
 type TimeEstimateUnit = NonNullable<TimeEstimate['unit']>
 
+interface StagedDraft {
+  id: string
+  title: string
+  time_estimate_value?: number
+  time_estimate_unit: TimeEstimateUnit
+}
+
 export const ItemModal: React.FC = () => {
   const { 
     selectedItemId, 
@@ -27,6 +34,7 @@ export const ItemModal: React.FC = () => {
     setChecklistEffortPrompt,
     getNextItems, 
     addNextItem, 
+    addNextItemsBatch,
     toggleNextItem, 
     deleteNextItem, 
     updateNextItem,
@@ -74,11 +82,16 @@ export const ItemModal: React.FC = () => {
   const [newExploreUnit, setNewExploreUnit] = useState<TimeEstimateUnit>('hours')
   const [showAddExploreForm, setShowAddExploreForm] = useState(false)
 
-  // Spawning next item from explore state
+  // Spawning single next item from explore state
   const [spawningExploreId, setSpawningExploreId] = useState<string | null>(null)
   const [spawnNextTitle, setSpawnNextTitle] = useState('')
   const [spawnNextEffort, setSpawnNextEffort] = useState<number | undefined>(undefined)
   const [spawnNextUnit, setSpawnNextUnit] = useState<TimeEstimateUnit>('hours')
+
+  // Phase 3 Staged Next Generation State
+  const [stagingExploreId, setStagingExploreId] = useState<string | null>(null)
+  const [stagingDrafts, setStagingDrafts] = useState<StagedDraft[]>([])
+  const [isGeneratingNext, setIsGeneratingNext] = useState(false)
 
   // Swap Modal State
   const [showParkSwapModal, setShowParkSwapModal] = useState(false)
@@ -168,6 +181,103 @@ export const ItemModal: React.FC = () => {
     setSpawnNextTitle('')
     setSpawnNextEffort(undefined)
     setSpawningExploreId(null)
+  }
+
+  // ─── Phase 3 AI Staging Draft Handlers ───
+  const handleGenerateNextDrafts = async (exp: { id: string; title: string; notes: string }) => {
+    setIsGeneratingNext(true)
+    setStagingExploreId(exp.id)
+    setSpawningExploreId(null)
+
+    try {
+      const rawSuggestions = await window.api.ai.generateNextFromExplore(exp.title, exp.notes)
+      if (rawSuggestions && rawSuggestions.length > 0) {
+        setStagingDrafts(rawSuggestions.map((s, idx) => ({
+          id: `draft-${Date.now()}-${idx}`,
+          title: s.title,
+          time_estimate_value: s.time_estimate_value,
+          time_estimate_unit: (s.time_estimate_unit as any) || 'hours'
+        })))
+      } else {
+        setStagingDrafts([{
+          id: `draft-${Date.now()}-0`,
+          title: `Action for ${exp.title || 'Research'}`,
+          time_estimate_value: 2,
+          time_estimate_unit: 'hours'
+        }])
+      }
+    } catch {
+      showToast('Could not contact model; added draft row', 'info')
+      setStagingDrafts([{
+        id: `draft-${Date.now()}-0`,
+        title: '',
+        time_estimate_value: 1,
+        time_estimate_unit: 'hours'
+      }])
+    } finally {
+      setIsGeneratingNext(false)
+    }
+  }
+
+  const handleAddStagedRow = () => {
+    setStagingDrafts(prev => [
+      ...prev,
+      {
+        id: `draft-${Date.now()}-${Math.random()}`,
+        title: '',
+        time_estimate_value: 1,
+        time_estimate_unit: 'hours'
+      }
+    ])
+  }
+
+  const handleUpdateStagedDraft = (draftId: string, changes: Partial<StagedDraft>) => {
+    setStagingDrafts(prev => prev.map(d => d.id === draftId ? { ...d, ...changes } : d))
+  }
+
+  const handleDeleteStagedDraft = (draftId: string) => {
+    setStagingDrafts(prev => prev.filter(d => d.id !== draftId))
+  }
+
+  const handleCommitStagedDrafts = async (exploreId: string) => {
+    const validDrafts = stagingDrafts.filter(d => d.title.trim().length > 0)
+    if (validDrafts.length === 0) {
+      setStagingExploreId(null)
+      setStagingDrafts([])
+      return
+    }
+
+    if (isNew) {
+      setLocalNext(prev => [
+        ...prev,
+        ...validDrafts.map(d => ({
+          id: `temp-${Date.now()}-${Math.random()}`,
+          parent_explore_id: exploreId,
+          title: d.title.trim(),
+          status: 'next' as const,
+          time_estimate_value: d.time_estimate_value,
+          time_estimate_unit: d.time_estimate_value ? d.time_estimate_unit : undefined
+        }))
+      ])
+    } else if (selectedItemId) {
+      await addNextItemsBatch(validDrafts.map(d => ({
+        epic_id: selectedItemId,
+        parent_explore_id: exploreId,
+        title: d.title.trim(),
+        time_estimate_value: d.time_estimate_value,
+        time_estimate_unit: d.time_estimate_value ? d.time_estimate_unit : undefined,
+        status: 'next'
+      })))
+    }
+
+    showToast(`Committed ${validDrafts.length} Next action(s) from research`, 'success')
+    setStagingExploreId(null)
+    setStagingDrafts([])
+  }
+
+  const handleCancelStagedDrafts = () => {
+    setStagingExploreId(null)
+    setStagingDrafts([])
   }
 
   const handleToggleNext = async (stepId: string) => {
@@ -437,7 +547,7 @@ export const ItemModal: React.FC = () => {
       inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08] hover:border-red-500/40 hover:text-slate-200'
     },
     done: {
-      active: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.3)] font-bold',
+      active: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-[0_0_12px_rgba(168,185,129,0.3)] font-bold',
       inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08] hover:border-emerald-500/40 hover:text-slate-200'
     },
     queued: {
@@ -605,6 +715,7 @@ export const ItemModal: React.FC = () => {
                         const linkedCount = getLinkedNextCount(exp.id)
                         const canDelete = isNew || existingItem?.status === 'done' || linkedCount === 0
                         const isSpawning = spawningExploreId === exp.id
+                        const isStaging = stagingExploreId === exp.id
 
                         return (
                           <div 
@@ -712,19 +823,111 @@ export const ItemModal: React.FC = () => {
                                   />
                                 </div>
 
-                                {/* Spawn Next Item Action Button */}
-                                <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
-                                  <span className="text-[10px] font-mono text-slate-400">Refine into execution</span>
+                                {/* Phase 3 Generate Next Actions Row */}
+                                <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => setSpawningExploreId(isSpawning ? null : exp.id)}
-                                    className="px-2.5 py-1 bg-gradient-to-r from-purple-500/20 to-amber-500/20 hover:from-purple-500/30 hover:to-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1"
+                                    disabled={isGeneratingNext}
+                                    onClick={() => handleGenerateNextDrafts(exp)}
+                                    className="px-2.5 py-1 bg-gradient-to-r from-purple-500/30 to-amber-500/30 hover:from-purple-500/40 hover:to-amber-500/40 text-amber-200 border border-amber-500/40 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                                   >
-                                    <span>⚡ + Spawn Next Action</span>
+                                    <span>✨</span>
+                                    <span>{isGeneratingNext && isStaging ? 'Drafting...' : 'Generate Next Items'}</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSpawningExploreId(isSpawning ? null : exp.id)
+                                      setStagingExploreId(null)
+                                    }}
+                                    className="px-2 py-1 text-slate-400 hover:text-slate-200 text-xs font-mono transition-colors"
+                                  >
+                                    + Manual Step
                                   </button>
                                 </div>
 
-                                {/* Inline Spawn Next Item Form */}
+                                {/* Phase 3 AI Staging Drafts Box */}
+                                {isStaging && (
+                                  <div className="p-3 bg-[#111624] border-2 border-amber-500/50 rounded-xl space-y-2.5 shadow-lg animate-fade-in">
+                                    <div className="flex items-center justify-between border-b border-amber-500/20 pb-1.5">
+                                      <span className="text-[11px] font-mono text-amber-300 font-bold flex items-center gap-1.5">
+                                        <span>⚡</span> Staged Draft Actions ({stagingDrafts.length})
+                                      </span>
+                                      <span className="text-[10px] font-mono text-slate-400">
+                                        Atomic Commit
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      {stagingDrafts.map((draft) => (
+                                        <div key={draft.id} className="flex items-center gap-2 bg-black/40 p-2 rounded-lg border border-white/[0.08]">
+                                          <input
+                                            type="text"
+                                            value={draft.title}
+                                            onChange={e => handleUpdateStagedDraft(draft.id, { title: e.target.value })}
+                                            placeholder="Action title..."
+                                            className="flex-1 bg-transparent text-xs text-slate-100 outline-none placeholder:text-slate-600 font-medium"
+                                          />
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            value={draft.time_estimate_value || ''}
+                                            onChange={e => handleUpdateStagedDraft(draft.id, { time_estimate_value: parseFloat(e.target.value) || undefined })}
+                                            placeholder="Est."
+                                            className="w-14 bg-[#1a1f2e] border border-white/[0.10] rounded px-1.5 py-0.5 text-xs text-slate-200 outline-none font-mono text-center"
+                                          />
+                                          <select
+                                            value={draft.time_estimate_unit}
+                                            onChange={e => handleUpdateStagedDraft(draft.id, { time_estimate_unit: e.target.value as any })}
+                                            className="bg-[#1a1f2e] border border-white/[0.10] rounded px-1.5 py-0.5 text-xs text-slate-300 outline-none font-mono"
+                                          >
+                                            <option value="mins">mins</option>
+                                            <option value="hours">hours</option>
+                                            <option value="days">days</option>
+                                          </select>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteStagedDraft(draft.id)}
+                                            className="text-slate-500 hover:text-red-400 text-xs px-1"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={handleAddStagedRow}
+                                        className="text-[11px] font-mono text-slate-400 hover:text-slate-200"
+                                      >
+                                        + Add draft row
+                                      </button>
+
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={handleCancelStagedDrafts}
+                                          className="px-2.5 py-1 text-xs text-slate-400 hover:text-slate-200"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCommitStagedDrafts(exp.id)}
+                                          className="px-3.5 py-1 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-900 font-bold text-xs rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1"
+                                        >
+                                          <span>✓ Commit All ({stagingDrafts.filter(d => d.title.trim()).length})</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Inline Manual Spawn Next Item Form */}
                                 {isSpawning && (
                                   <div className="p-2.5 bg-[#121724] border border-amber-500/40 rounded-xl space-y-2 animate-fade-in">
                                     <span className="text-[10px] font-mono text-amber-300 font-bold block">

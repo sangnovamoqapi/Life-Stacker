@@ -309,6 +309,7 @@ export interface LifeStackAPI {
   nextItems: {
     list(filters?: { epic_id?: string; status?: NextItemStatus; parent_explore_id?: string }): Promise<NextItem[]>
     create(data: NewNextItem): Promise<NextItem>
+    createBatch(items: NewNextItem[]): Promise<NextItem[]>
     update(id: string, changes: Partial<Omit<NextItem, 'id' | 'epic_id' | 'created_at'>>): Promise<NextItem>
     toggle(id: string): Promise<NextItem>
     promoteToToday(id: string): Promise<NextItem>
@@ -345,6 +346,7 @@ export interface LifeStackAPI {
   ai: {
     checkStatus(): Promise<boolean>
     getLastError(): Promise<string | null>
+    generateNextFromExplore(title: string, notes: string): Promise<{ title: string; time_estimate_value?: number; time_estimate_unit?: string }[]>
   }
   chat: {
     send(message: string): Promise<{ assistantMessage: ChatMessage; pendingActions: PendingAction[]; error?: string }>

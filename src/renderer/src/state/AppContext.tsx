@@ -66,6 +66,7 @@ interface AppContextType {
   // Next items API
   getNextItems: (epicId: string) => NextItem[]
   addNextItem: (data: NewNextItem) => Promise<NextItem>
+  addNextItemsBatch: (items: NewNextItem[]) => Promise<NextItem[]>
   updateNextItem: (id: string, changes: Partial<Omit<NextItem, 'id' | 'epic_id' | 'created_at'>>) => Promise<NextItem>
   toggleNextItem: (id: string) => Promise<NextItem>
   promoteToToday: (id: string) => Promise<NextItem>
@@ -392,6 +393,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return item
   }
 
+  const addNextItemsBatch = async (itemsList: NewNextItem[]) => {
+    if (itemsList.length === 0) return []
+    const createdItems = await window.api.nextItems.createBatch(itemsList)
+    setNextItems(prev => {
+      const nextMap = { ...prev }
+      for (const item of createdItems) {
+        const current = nextMap[item.epic_id] || []
+        nextMap[item.epic_id] = [...current, item]
+      }
+      return nextMap
+    })
+    return createdItems
+  }
+
   const updateNextItem = async (id: string, changes: Partial<Omit<NextItem, 'id' | 'epic_id' | 'created_at'>>) => {
     const updated = await window.api.nextItems.update(id, changes)
     setNextItems(prev => {
@@ -651,7 +666,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       exploreItems, nextItems, actionSteps,
       refreshAll, createItem, updateItem, deleteItem, createSector, updateSector, deleteSector, reorderSectors, reorderItem, setUrgent, addEffort, updateSettings,
       toggleChecklistItem, getExploreItems, addExploreItem, updateExploreItem, toggleExploreItemClosed, deleteExploreItem,
-      getNextItems, addNextItem, updateNextItem, toggleNextItem, promoteToToday, demoteFromToday, deleteNextItem, reorderNextItems, reorderTodayItems,
+      getNextItems, addNextItem, addNextItemsBatch, updateNextItem, toggleNextItem, promoteToToday, demoteFromToday, deleteNextItem, reorderNextItems, reorderTodayItems,
       getResearchProgress, getExecutionProgress, getEpicStage,
       getActionSteps, addActionStep, toggleActionStep, deleteActionStep, updateActionStep, reorderActionSteps,
       setSearchTerm, setViewMode, openItemModal, openNewItemModal, openSectorModal, closeModal, showToast, dismissToast, setEffortPrompt, setChecklistEffortPrompt,

@@ -152,3 +152,84 @@ export async function embed(
     return null
   }
 }
+
+export async function generateDraftNextItems(
+  exploreTitle: string,
+  exploreNotes: string
+): Promise<{ title: string; time_estimate_value?: number; time_estimate_unit?: string }[]> {
+  const isOnline = await checkStatus()
+  const fallbackRows: { title: string; time_estimate_value?: number; time_estimate_unit?: string }[] = []
+
+  // Heuristic parse from notes
+  const lines = (exploreNotes || '').split('\n').map(l => l.trim()).filter(Boolean)
+  const bulletLines = lines.filter(l => /^(\d+[\.\)\-]|[-*•])\s+/.test(l))
+  if (bulletLines.length > 0) {
+    bulletLines.forEach(l => {
+      const clean = l.replace(/^(\d+[\.\)\-]|[-*•])\s+/, '').trim()
+      if (clean.length > 2) {
+        fallbackRows.push({ title: clean, time_estimate_value: 2, time_estimate_unit: 'hours' })
+      }
+    })
+  }
+
+  if (!isOnline) {
+    if (fallbackRows.length > 0) return fallbackRows
+    return [{ title: `Action for ${exploreTitle || 'Research'}`, time_estimate_value: 1, time_estimate_unit: 'hours' }]
+  }
+
+  try {
+    const model = await getBestChatModel()
+    const prompt = `You are a high-performance productivity assistant in LifeStack. 
+Convert the following research findings into 2 to 4 concrete, actionable next steps.
+Topic: "${exploreTitle}"
+Findings & Notes:
+"""
+${exploreNotes}
+"""
+
+Return ONLY a valid JSON array of objects with keys: "title" (concise action verb phrase) and "time_estimate_value" (estimated hours as number, e.g. 2) and "time_estimate_unit" ("hours" or "mins").
+Example output:
+[
+  {"title": "Draft proposal for application", "time_estimate_value": 3, "time_estimate_unit": "hours"},
+  {"title": "Schedule consultation call", "time_estimate_value": 30, "time_estimate_unit": "mins"}
+]`
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 12000)
+
+    const res = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        prompt,
+        stream: false,
+        format: 'json'
+      }),
+      signal: controller.signal
+    })
+    clearTimeout(timeoutId)
+
+    if (res.ok) {
+      const data = await res.json() as { response?: string }
+      if (data.response) {
+        const parsed = JSON.parse(data.response)
+        const rawList = Array.isArray(parsed) ? parsed : (parsed.items || parsed.actions || parsed.steps || [])
+        if (Array.isArray(rawList) && rawList.length > 0) {
+          const valid = rawList.map((item: any) => ({
+            title: String(item.title || item.action || item.text || '').trim(),
+            time_estimate_value: typeof item.time_estimate_value === 'number' ? item.time_estimate_value : (typeof item.effort_value === 'number' ? item.effort_value : undefined),
+            time_estimate_unit: typeof item.time_estimate_unit === 'string' ? item.time_estimate_unit : 'hours'
+          })).filter(item => item.title.length > 0)
+
+          if (valid.length > 0) return valid
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[AI Generate Next Items] Fallback due to:', err)
+  }
+
+  if (fallbackRows.length > 0) return fallbackRows
+  return [{ title: `Action for ${exploreTitle || 'Research'}`, time_estimate_value: 1, time_estimate_unit: 'hours' }]
+}
