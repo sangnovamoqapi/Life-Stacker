@@ -115,17 +115,39 @@ export const SettingsView: React.FC = () => {
           <div className="space-y-4 max-w-md">
             <div>
               <label className="block text-xs font-mono text-slate-300 mb-1.5 uppercase tracking-wider">
-                Focus Limit
+                Active Epic Cap
               </label>
               <div className="flex gap-3 items-center">
                 <input 
                   type="number" 
                   min="1" 
-                  value={settings.focus_limit}
-                  onChange={e => updateSettings('focus_limit', parseInt(e.target.value, 10))}
+                  step="any"
+                  value={settings.active_epic_cap ?? settings.focus_limit ?? 5}
+                  onChange={e => {
+                    const val = parseInt(e.target.value, 10) || 5
+                    updateSettings('active_epic_cap', val)
+                    updateSettings('focus_limit', val)
+                  }}
                   className="bg-[#121622]/90 border border-white/[0.12] rounded-lg px-3 py-1.5 w-24 text-slate-100 outline-none focus:border-blue-500 font-mono"
                 />
-                <span className="text-xs text-slate-400">Max active items before warnings</span>
+                <span className="text-xs text-slate-400">Max concurrently active in-flight epics</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-mono text-slate-300 mb-1.5 uppercase tracking-wider">
+                Today Focus Cap
+              </label>
+              <div className="flex gap-3 items-center">
+                <input 
+                  type="number" 
+                  min="1" 
+                  step="any"
+                  value={settings.today_cap ?? 3}
+                  onChange={e => updateSettings('today_cap', parseInt(e.target.value, 10) || 3)}
+                  className="bg-[#121622]/90 border border-white/[0.12] rounded-lg px-3 py-1.5 w-24 text-slate-100 outline-none focus:border-blue-500 font-mono"
+                />
+                <span className="text-xs text-slate-400">Max high-priority actions in Today's focus</span>
               </div>
             </div>
 
@@ -137,26 +159,42 @@ export const SettingsView: React.FC = () => {
                 <input 
                   type="number" 
                   min="1" 
+                  step="any"
                   value={settings.stale_threshold_days}
                   onChange={e => updateSettings('stale_threshold_days', parseInt(e.target.value, 10))}
                   className="bg-[#121622]/90 border border-white/[0.12] rounded-lg px-3 py-1.5 w-24 text-slate-100 outline-none focus:border-blue-500 font-mono"
                 />
-                <span className="text-xs text-slate-400">Days before active/paused items show stale warning</span>
+                <span className="text-xs text-slate-400">Days before items highlight as stale</span>
               </div>
             </div>
 
-            <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer pt-2">
-              <input 
-                type="checkbox" 
-                checked={settings.launch_at_login}
-                onChange={e => {
-                  updateSettings('launch_at_login', e.target.checked)
-                  window.api.app.setLoginItem(e.target.checked)
-                }}
-                className="w-4 h-4 rounded accent-blue-500 cursor-pointer"
-              />
-              <span>Launch at login</span>
-            </label>
+            <div className="pt-2 space-y-2.5 border-t border-white/[0.06]">
+              <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={settings.burn_tracking_enabled !== false}
+                  onChange={e => updateSettings('burn_tracking_enabled', e.target.checked)}
+                  className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                />
+                <div>
+                  <span className="font-medium">Enable Pace & Burn Tracking</span>
+                  <p className="text-xs text-slate-400">Shows informational velocity, weekly burn hours, and horizon pace.</p>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={settings.launch_at_login}
+                  onChange={e => {
+                    updateSettings('launch_at_login', e.target.checked)
+                    window.api.app.setLoginItem(e.target.checked)
+                  }}
+                  className="w-4 h-4 rounded accent-blue-500 cursor-pointer"
+                />
+                <span>Launch at login</span>
+              </label>
+            </div>
           </div>
         </section>
 

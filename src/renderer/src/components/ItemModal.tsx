@@ -109,12 +109,14 @@ export const ItemModal: React.FC = () => {
   const activeCount = items.filter(i => i.status === 'active').length
 
   useEffect(() => {
+    if (selectedItemId) {
+      window.api.effortLog.getTotals(selectedItemId).then(res => setEffortTotals(res[0] || null))
+    }
     if (selectedItemId && activeTab === 'history') {
       window.api.actionLog.listForItem(selectedItemId).then(setActionLog)
     }
     if (selectedItemId && activeTab === 'effort') {
       window.api.effortLog.listForItem(selectedItemId).then(setEffortLog)
-      window.api.effortLog.getTotals(selectedItemId).then(res => setEffortTotals(res[0] || null))
     }
   }, [selectedItemId, activeTab])
 
@@ -678,6 +680,25 @@ export const ItemModal: React.FC = () => {
                       <option value="years">years</option>
                     </select>
                   </div>
+
+                  {settings.burn_tracking_enabled !== false && existingItem && (
+                    <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono text-slate-400">
+                      <span>
+                        {effortTotals && effortTotals.total_hours > 0 ? (
+                          <>
+                            <strong className="text-amber-400">{effortTotals.total_hours.toFixed(1)}h</strong> logged
+                          </>
+                        ) : (
+                          '0h logged'
+                        )}
+                      </span>
+                      {budgetValue && (
+                        <span className="text-blue-400">
+                          {Math.min(100, Math.round((Math.max(1, Math.floor((Date.now() - new Date(existingItem.created_at).getTime()) / (1000 * 60 * 60 * 24))) / (budgetValue * (budgetUnit === 'years' ? 365 : budgetUnit === 'quarters' ? 90 : 30))) * 100))}% elapsed
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
