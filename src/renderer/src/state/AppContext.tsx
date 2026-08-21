@@ -72,6 +72,7 @@ interface AppContextType {
   demoteFromToday: (id: string) => Promise<NextItem>
   deleteNextItem: (id: string) => Promise<void>
   reorderNextItems: (epicId: string, itemIds: string[]) => Promise<void>
+  reorderTodayItems: (itemIds: string[]) => Promise<void>
 
   // Computed Stage & Dual Progress
   getResearchProgress: (epicId: string) => number
@@ -456,6 +457,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     })
   }
 
+  const reorderTodayItems = async (itemIds: string[]) => {
+    await window.api.nextItems.reorderToday(itemIds)
+    setNextItems(prev => {
+      const orderMap = new Map(itemIds.map((id, idx) => [id, idx]))
+      const nextMap = { ...prev }
+      for (const k in nextMap) {
+        nextMap[k] = [...nextMap[k]].map(item => {
+          if (orderMap.has(item.id)) {
+            return { ...item, sort_order: orderMap.get(item.id)! }
+          }
+          return item
+        }).sort((a, b) => a.sort_order - b.sort_order)
+      }
+      return nextMap
+    })
+  }
+
   // ─── Dual Progress & Computed Stage ───
   const getResearchProgress = useCallback((epicId: string): number => {
     const exploreList = exploreItems[epicId] || []
@@ -633,7 +651,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       exploreItems, nextItems, actionSteps,
       refreshAll, createItem, updateItem, deleteItem, createSector, updateSector, deleteSector, reorderSectors, reorderItem, setUrgent, addEffort, updateSettings,
       toggleChecklistItem, getExploreItems, addExploreItem, updateExploreItem, toggleExploreItemClosed, deleteExploreItem,
-      getNextItems, addNextItem, updateNextItem, toggleNextItem, promoteToToday, demoteFromToday, deleteNextItem, reorderNextItems,
+      getNextItems, addNextItem, updateNextItem, toggleNextItem, promoteToToday, demoteFromToday, deleteNextItem, reorderNextItems, reorderTodayItems,
       getResearchProgress, getExecutionProgress, getEpicStage,
       getActionSteps, addActionStep, toggleActionStep, deleteActionStep, updateActionStep, reorderActionSteps,
       setSearchTerm, setViewMode, openItemModal, openNewItemModal, openSectorModal, closeModal, showToast, dismissToast, setEffortPrompt, setChecklistEffortPrompt,

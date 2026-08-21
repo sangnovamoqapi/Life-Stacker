@@ -24,7 +24,8 @@ const api: LifeStackAPI = {
     toggle: (id: string) => ipcRenderer.invoke('nextItems:toggle', id),
     promoteToToday: (id: string) => ipcRenderer.invoke('nextItems:promoteToToday', id),
     delete: (id: string) => ipcRenderer.invoke('nextItems:delete', id),
-    reorder: (epicId: string, itemIds: string[]) => ipcRenderer.invoke('nextItems:reorder', epicId, itemIds)
+    reorder: (epicId: string, itemIds: string[]) => ipcRenderer.invoke('nextItems:reorder', epicId, itemIds),
+    reorderToday: (itemIds: string[]) => ipcRenderer.invoke('nextItems:reorderToday', itemIds)
   },
   actionSteps: {
     list: (itemId: string) => ipcRenderer.invoke('actionSteps:list', itemId),

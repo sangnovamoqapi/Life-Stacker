@@ -226,3 +226,13 @@ export function reorderNextItems(epicId: string, itemIds: string[]): void {
     })
   })()
 }
+
+export function reorderTodayItems(itemIds: string[]): void {
+  const db = getDb()
+  const updateStmt = db.prepare('UPDATE next_items SET sort_order = ? WHERE id = ?')
+  db.transaction(() => {
+    itemIds.forEach((id, index) => {
+      updateStmt.run(index, id)
+    })
+  })()
+}

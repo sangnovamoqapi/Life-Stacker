@@ -314,6 +314,7 @@ export interface LifeStackAPI {
     promoteToToday(id: string): Promise<NextItem>
     delete(id: string): Promise<void>
     reorder(epicId: string, itemIds: string[]): Promise<void>
+    reorderToday(itemIds: string[]): Promise<void>
   }
   actionSteps: {
     list(itemId: string): Promise<NextItem[]>

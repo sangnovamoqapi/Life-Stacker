@@ -1,391 +1,512 @@
 import React, { useMemo, useState } from 'react'
 import { useAppContext } from '../state/AppContext'
-import type { Item, ItemStatus } from '../types'
-import { parseChecklist, formatEffortBadge } from '../utils/checklist'
-import { renderSimpleMarkdown } from '../utils/markdown'
-import { useHybridSearch } from '../hooks/useHybridSearch'
+import type { Item, NextItem, ExploreItem } from '../types'
+import { formatEffortBadge } from '../utils/checklist'
+import { TodayBumpModal } from '../components/TodayBumpModal'
 
-function relativeTime(dateStr: string) {
+function daysSince(dateStr: string) {
   const d = new Date(dateStr)
   const now = new Date()
-  const days = Math.floor(Math.abs(now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.floor(Math.abs(now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function formatDaysAgo(dateStr: string) {
+  const days = daysSince(dateStr)
   if (days === 0) return 'Today'
   if (days === 1) return 'Yesterday'
   if (days < 7) return `${days}d ago`
   return `${Math.floor(days / 7)}w ago`
 }
 
-const statusBadgeStyles: Record<string, { bg: string; text: string; border: string; dot: string }> = {
-  active: {
-    bg: 'bg-blue-500/20',
-    text: 'text-blue-300',
-    border: 'border-blue-500/50',
-    dot: 'bg-blue-400'
-  },
-  paused: {
-    bg: 'bg-amber-500/20',
-    text: 'text-amber-300',
-    border: 'border-amber-500/50',
-    dot: 'bg-amber-400'
-  },
-  blocked: {
-    bg: 'bg-red-500/20',
-    text: 'text-red-300',
-    border: 'border-red-500/50',
-    dot: 'bg-red-400'
-  },
-  done: {
-    bg: 'bg-emerald-500/20',
-    text: 'text-emerald-300',
-    border: 'border-emerald-500/50',
-    dot: 'bg-emerald-400'
-  },
-  queued: {
-    bg: 'bg-slate-500/20',
-    text: 'text-slate-300',
-    border: 'border-slate-500/50',
-    dot: 'bg-slate-400'
-  }
-}
-
 export const OverviewView: React.FC = () => {
-  const { items, sectors, actionSteps, searchTerm, openItemModal, reorderItem, showToast, toggleChecklistItem } = useAppContext()
-  const [draggedId, setDraggedId] = useState<string | null>(null)
-  const [dragOverId, setDragOverId] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<string>('ALL')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const { 
+    items, 
+    sectors, 
+    exploreItems, 
+    nextItems, 
+    settings, 
+    openItemModal, 
+    updateItem, 
+    toggleNextItem, 
+    promoteToToday, 
+    demoteFromToday, 
+    reorderTodayItems, 
+    getResearchProgress, 
+    getExecutionProgress, 
+    getEpicStage,
+    showToast,
+    setChecklistEffortPrompt
+  } = useAppContext()
 
-  const { combinedItems, semanticMatchedIds, isSearching } = useHybridSearch(items, sectors, actionSteps, searchTerm)
+  // Bump Modal State
+  const [targetNextItemToPromote, setTargetNextItemToPromote] = useState<NextItem | null>(null)
 
-  const rankedItems = useMemo(() => {
-    let result: Item[]
-    if (isSearching) {
-      result = combinedItems
+  // Drag & drop state for Today panel
+  const [draggedTodayId, setDraggedTodayId] = useState<string | null>(null)
+  const [dragOverTodayId, setDragOverTodayId] = useState<string | null>(null)
+
+  const activeCap = settings.active_epic_cap ?? settings.focus_limit ?? 5
+  const todayCap = settings.today_cap ?? 3
+
+  const getSector = (sectorId: string) => sectors.find(s => s.id === sectorId)
+  const getEpic = (epicId: string) => items.find(i => i.id === epicId)
+
+  // ─── 1. TOP-LEFT: Active Epics (Ranked #1..#5) ───
+  const activeEpics = useMemo(() => {
+    return items
+      .filter(i => i.status === 'active')
+      .sort((a, b) => a.priority_rank - b.priority_rank)
+      .slice(0, activeCap)
+  }, [items, activeCap])
+
+  const activeEpicIds = useMemo(() => new Set(activeEpics.map(e => e.id)), [activeEpics])
+
+  // ─── 2. TOP-RIGHT: Explore Items (Open research from active epics, oldest-touched first) ───
+  const activeExploreItems = useMemo(() => {
+    const list: ExploreItem[] = []
+    Object.keys(exploreItems).forEach(epicId => {
+      if (activeEpicIds.has(epicId)) {
+        const epicsExplores = exploreItems[epicId] || []
+        epicsExplores.forEach(e => {
+          if (!e.closed) list.push(e)
+        })
+      }
+    })
+
+    // Sort by staleness (oldest-touched first)
+    return list.sort((a, b) => new Date(a.last_touched_at).getTime() - new Date(b.last_touched_at).getTime())
+  }, [exploreItems, activeEpicIds])
+
+  // ─── 3. BOTTOM-LEFT: Next Items (Open actions from active epics, due-date-then-effort) ───
+  const activeNextItems = useMemo(() => {
+    const list: NextItem[] = []
+    Object.keys(nextItems).forEach(epicId => {
+      if (activeEpicIds.has(epicId)) {
+        const epicsNext = nextItems[epicId] || []
+        epicsNext.forEach(n => {
+          if (n.status === 'next') list.push(n)
+        })
+      }
+    })
+
+    // Sort by due-date-then-effort:
+    // 1. Items with due dates (earliest first)
+    // 2. Items without due dates, sorted by time estimate (smallest first)
+    return list.sort((a, b) => {
+      if (a.due_date && b.due_date) {
+        return new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
+      }
+      if (a.due_date && !b.due_date) return -1
+      if (!a.due_date && b.due_date) return 1
+
+      const aEst = a.time_estimate_value ?? 9999
+      const bEst = b.time_estimate_value ?? 9999
+      return aEst - bEst
+    })
+  }, [nextItems, activeEpicIds])
+
+  // ─── 4. BOTTOM-RIGHT: Today Focus Items (all status === 'today') ───
+  const todayItems = useMemo(() => {
+    const list: NextItem[] = []
+    Object.keys(nextItems).forEach(epicId => {
+      const epicsNext = nextItems[epicId] || []
+      epicsNext.forEach(n => {
+        if (n.status === 'today') list.push(n)
+      })
+    })
+    return list.sort((a, b) => a.sort_order - b.sort_order)
+  }, [nextItems])
+
+  // ─── Action Handlers ───
+  const handlePromoteClick = async (nextItem: NextItem) => {
+    if (todayItems.length >= todayCap) {
+      setTargetNextItemToPromote(nextItem)
     } else {
-      result = [...items].sort((a, b) => a.priority_rank - b.priority_rank)
+      await promoteToToday(nextItem.id)
+      showToast(`Pulled "${nextItem.title}" into Today focus`, 'success')
     }
+  }
 
-    if (statusFilter !== 'ALL') {
-      result = result.filter(item => item.status.toUpperCase() === statusFilter)
+  const handleConfirmBump = async (bumpItemId: string) => {
+    if (!targetNextItemToPromote) return
+    const bumpedItem = todayItems.find(i => i.id === bumpItemId)
+    
+    await demoteFromToday(bumpItemId)
+    await promoteToToday(targetNextItemToPromote.id)
+    
+    showToast(`Bumping: "${targetNextItemToPromote.title}" moved to Today, "${bumpedItem?.title || 'Item'}" back to Next`, 'info')
+    setTargetNextItemToPromote(null)
+  }
+
+  const handleToggleTodayDone = async (item: NextItem) => {
+    const toggled = await toggleNextItem(item.id)
+    if (toggled.status === 'done') {
+      setChecklistEffortPrompt({
+        itemId: item.epic_id,
+        checklistItem: {
+          id: item.id,
+          text: item.title,
+          completed: true,
+          effortValue: item.time_estimate_value ?? undefined,
+          effortUnit: (item.time_estimate_unit as any) || undefined
+        }
+      })
+      showToast(`Completed: "${item.title}"`, 'success')
     }
-    return result
-  }, [items, combinedItems, isSearching, statusFilter])
+  }
 
-  const handleDragStart = (e: React.DragEvent, item: Item) => {
-    setDraggedId(item.id)
+  // Drag-to-reorder within Today panel
+  const handleTodayDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedTodayId(id)
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  const handleDragOver = (e: React.DragEvent, item: Item) => {
+  const handleTodayDragOver = (e: React.DragEvent, id: string) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    if (item.id !== draggedId) setDragOverId(item.id)
+    if (id !== draggedTodayId) setDragOverTodayId(id)
   }
 
-  const handleDrop = async (e: React.DragEvent, targetItem: Item) => {
+  const handleTodayDrop = async (e: React.DragEvent, targetId: string) => {
     e.preventDefault()
-    if (!draggedId || draggedId === targetItem.id) return
-    try {
-      await reorderItem(draggedId, targetItem.priority_rank)
-    } catch {
-      showToast('Failed to reorder', 'warning')
+    if (!draggedTodayId || draggedTodayId === targetId) return
+
+    const currentIds = todayItems.map(i => i.id)
+    const fromIdx = currentIds.indexOf(draggedTodayId)
+    const toIdx = currentIds.indexOf(targetId)
+
+    if (fromIdx !== -1 && toIdx !== -1) {
+      const reordered = [...currentIds]
+      const [moved] = reordered.splice(fromIdx, 1)
+      reordered.splice(toIdx, 0, moved)
+
+      await reorderTodayItems(reordered)
+      showToast('Today focus reordered', 'info')
     }
-    setDraggedId(null)
-    setDragOverId(null)
+
+    setDraggedTodayId(null)
+    setDragOverTodayId(null)
   }
 
-  const handleDragEnd = () => {
-    setDraggedId(null)
-    setDragOverId(null)
-  }
-
-  const toggleExpand = (id: string) => {
-    setExpandedId(prev => prev === id ? null : id)
+  const handleTodayDragEnd = () => {
+    setDraggedTodayId(null)
+    setDragOverTodayId(null)
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-6">
-      <div className="max-w-7xl mx-auto space-y-4">
-        
-        {/* Main Frosted Glass Card Container (Matching Lane Card Translucency) */}
-        <div className="glass-panel rounded-2xl p-6 space-y-5">
-          
-          {/* Header: Title + Subtitle + Status Filter */}
-          <div className="flex items-start justify-between border-b border-white/[0.08] pb-4">
-            <div>
-              <h2 className="font-sans text-2xl font-bold text-slate-100 tracking-tight flex items-center gap-2">
-                <span>Life Stack</span>
-                <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                  {rankedItems.length} items
-                </span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Of everything in your life, this is what comes next.
-              </p>
-            </div>
+    <div className="flex-1 p-6 overflow-hidden flex flex-col gap-4">
+      {/* 2×2 Fixed Grid Container */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 grid-rows-2 gap-4 overflow-hidden min-h-0">
 
+        {/* ═══════════════════════════════════════════════════════════════════
+            1. TOP-LEFT: EPICS PANEL
+           ═══════════════════════════════════════════════════════════════════ */}
+        <div className="lane-glass rounded-2xl p-4 flex flex-col min-h-0 border border-white/[0.08] shadow-lg">
+          <div className="flex items-center justify-between pb-3 border-b border-white/[0.06] shrink-0">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-slate-400">Filter:</span>
-              <div className="relative">
-                <select
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value)}
-                  className="bg-[#121622]/90 hover:bg-[#181d2b] border border-white/[0.12] text-xs font-mono font-semibold text-slate-200 px-3.5 py-1.5 rounded-lg outline-none cursor-pointer uppercase tracking-wider transition-colors"
-                >
-                  <option value="ALL">ALL</option>
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="PAUSED">PAUSED</option>
-                  <option value="BLOCKED">BLOCKED</option>
-                  <option value="DONE">DONE</option>
-                </select>
-              </div>
+              <span className="text-base">⚡</span>
+              <h2 className="font-sans font-bold text-slate-100 text-sm">Active Epics</h2>
+              <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/15 px-2 py-0.5 rounded-full border border-blue-500/25">
+                {activeEpics.length} / {activeCap}
+              </span>
             </div>
+            <span className="text-[11px] font-mono text-slate-400">Ranked by Priority</span>
           </div>
 
-          {/* Table Container */}
-          <div className="w-full">
-            {/* Table Header */}
-            <div className="flex items-center px-4 py-2.5 text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider border-b border-white/[0.08] bg-black/20 rounded-xl mb-2">
-              <div className="w-20 shrink-0">RANK</div>
-              <div className="flex-1 min-w-[200px]">TITLE</div>
-              <div className="w-44 shrink-0">SECTOR</div>
-              <div className="w-48 shrink-0">PROGRESS</div>
-              <div className="w-32 shrink-0">STATUS</div>
-              <div className="w-24 shrink-0 text-right">UPDATED</div>
-            </div>
+          <div className="flex-1 overflow-y-auto pt-3 space-y-2.5 pr-1">
+            {activeEpics.map(epic => {
+              const sec = getSector(epic.sector_id)
+              const secColor = sec ? `var(--color-${sec.color})` : '#3b82f6'
+              const researchProg = getResearchProgress(epic.id)
+              const executionProg = getExecutionProgress(epic.id)
+              const stage = getEpicStage(epic.id)
 
-            {/* Table Body */}
-            {rankedItems.length === 0 ? (
-              <div className="text-center py-16 text-slate-500 font-sans italic text-sm">
-                {searchTerm ? 'No items match your search filter.' : 'No items to display.'}
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {rankedItems.map(item => {
-                  const sector = sectors.find(s => s.id === item.sector_id)
-                  const isDragging = draggedId === item.id
-                  const isDragOver = dragOverId === item.id
-                  const isExpanded = expandedId === item.id
-                  const badge = statusBadgeStyles[item.status] || statusBadgeStyles.active
-                  const checklist = parseChecklist(item.next_action)
-                  const sectorColor = sector ? `var(--color-${sector.color})` : '#3b82f6'
-
-                  return (
-                    <div key={item.id} className="transition-all">
-                      {/* Main Card Row with Rich Glass Depth */}
-                      <div
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, item)}
-                        onDragOver={(e) => handleDragOver(e, item)}
-                        onDrop={(e) => handleDrop(e, item)}
-                        onDragEnd={handleDragEnd}
-                        onClick={() => toggleExpand(item.id)}
-                        className={`drag-row flex items-center px-4 py-3 bg-black/25 hover:bg-black/40 border border-white/[0.06] hover:border-white/[0.12] cursor-pointer transition-all group rounded-xl shadow-sm ${
-                          isDragging ? 'opacity-40' : ''
-                        } ${isDragOver ? 'border-t-2 border-blue-500' : ''} ${
-                          isExpanded ? 'bg-black/45 border-white/[0.14]' : ''
-                        } ${item.status === 'done' ? 'opacity-50' : ''}`}
-                      >
-                        {/* Rank + Glassy Accordion Button */}
-                        <div className="w-20 shrink-0 flex items-center gap-2">
-                          <span 
-                            className="drag-handle text-slate-600 group-hover:text-slate-400 text-xs select-none"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            ⠿
-                          </span>
-                          <span className="font-mono text-xs font-bold text-slate-300 min-w-[24px] flex items-center gap-1">
-                            #{item.priority_rank}
-                            {semanticMatchedIds.has(item.id) && (
-                              <span 
-                                className="text-[10px] font-bold text-amber-400 bg-amber-400/15 px-1 py-0.2 rounded border border-amber-400/30 cursor-help"
-                                title="related to your search"
-                              >
-                                ✦
-                              </span>
-                            )}
-                          </span>
-                          
-                          {/* Glassy Chevron Button */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              toggleExpand(item.id)
-                            }}
-                            className={`w-6 h-6 rounded-md flex items-center justify-center transition-all shadow-sm ${
-                              isExpanded 
-                                ? 'bg-blue-600/30 border border-blue-500/50 text-blue-300' 
-                                : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.10] text-slate-400 hover:text-white'
-                            }`}
-                            title={isExpanded ? 'Collapse' : 'Expand details'}
-                          >
-                            <svg 
-                              className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} 
-                              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                        </div>
-
-                        {/* Title */}
-                        <div className="flex-1 min-w-[200px] pr-4">
-                          <span className={`text-sm font-sans font-bold text-slate-100 group-hover:text-blue-300 transition-colors ${
-                            item.status === 'done' ? 'line-through text-slate-500' : ''
-                          }`}>
-                            {item.title}
-                          </span>
-                          {/* Mini subtitle indicator if has checklist */}
-                          {checklist.length > 0 && !isExpanded && (
-                            <div className="text-[11px] text-slate-400 truncate mt-0.5 flex items-center gap-1.5">
-                              <span className="text-blue-400">→</span>
-                              <span>{checklist[0].text}</span>
-                              {checklist.length > 1 && (
-                                <span className="text-[10px] font-mono text-slate-500">
-                                  (+{checklist.length - 1} more)
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Sector */}
-                        <div className="w-44 shrink-0 flex items-center gap-2 text-xs text-slate-200 pr-2">
-                          {sector ? (
-                            <>
-                              <div 
-                                className="w-2 h-2 rounded-full shrink-0"
-                                style={{ backgroundColor: sectorColor }}
-                              />
-                              {sector.icon && <span className="text-sm select-none shrink-0">{sector.icon}</span>}
-                              <span className="truncate font-medium">{sector.name}</span>
-                            </>
-                          ) : (
-                            <span className="text-slate-500 italic">No Sector</span>
-                          )}
-                        </div>
-
-                        {/* Progress Bar (Always clearly visible with gradient fill) */}
-                        <div className="w-48 shrink-0 flex items-center gap-3 pr-4" onClick={e => e.stopPropagation()}>
-                          <div className="flex-1 h-2 rounded-full overflow-hidden bg-white/[0.08] p-0.5 border border-white/[0.05]">
-                            <div 
-                              className="h-full rounded-full transition-all duration-300"
-                              style={{ 
-                                width: `${Math.max(item.progress, item.progress > 0 ? 5 : 0)}%`,
-                                background: 'linear-gradient(90deg, #2563eb, #3b82f6, #60a5fa)',
-                                boxShadow: item.progress > 0 ? '0 0 8px rgba(59,130,246,0.5)' : 'none'
-                              }} 
-                            />
-                          </div>
-                          <span className="font-mono text-xs text-slate-300 min-w-[32px] text-right font-bold">
-                            {item.progress}%
-                          </span>
-                        </div>
-
-                        {/* Status Pill */}
-                        <div className="w-32 shrink-0">
-                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider font-bold border shadow-sm ${badge.bg} ${badge.text} ${badge.border}`}>
-                            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${badge.dot}`} />
-                            <span>{item.status}</span>
-                          </div>
-                        </div>
-
-                        {/* Relative Timestamp */}
-                        <div className="w-24 shrink-0 text-right font-mono text-xs text-slate-400 font-medium">
-                          {relativeTime(item.updated_at)}
-                        </div>
-                      </div>
-
-                      {/* Expandable Inline Accordion Drawer */}
-                      {isExpanded && (
-                        <div className="ml-10 mr-2 my-2 p-4 bg-black/40 border border-white/[0.08] rounded-xl shadow-inner space-y-4">
-                          
-                          {/* Next Action Checklist */}
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-mono text-blue-400 uppercase tracking-wider font-bold">
-                                Next Action Checklist ({checklist.filter(c => c.completed).length}/{checklist.length})
-                              </span>
-                              <span className="text-[11px] font-mono text-slate-400">
-                                Click checkbox to log effort & complete
-                              </span>
-                            </div>
-
-                            {checklist.length > 0 ? (
-                              <div className="space-y-1.5">
-                                {checklist.map(step => (
-                                  <div 
-                                    key={step.id} 
-                                    className={`flex items-center gap-2.5 p-2 rounded-lg border transition-all ${
-                                      step.completed 
-                                        ? 'bg-white/[0.02] border-white/[0.04] opacity-60' 
-                                        : 'bg-white/[0.04] border-white/[0.08] hover:border-white/[0.15]'
-                                    }`}
-                                  >
-                                    {/* Dark themed custom checkbox */}
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleChecklistItem(item.id, step.id)}
-                                      className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
-                                        step.completed
-                                          ? 'bg-blue-600 border-blue-500 text-white'
-                                          : 'bg-[#121622] border-white/25 hover:border-blue-400'
-                                      }`}
-                                    >
-                                      {step.completed && <span className="text-[10px] font-bold leading-none">✓</span>}
-                                    </button>
-
-                                    <span className={`text-xs flex-1 ${
-                                      step.completed ? 'line-through text-slate-500' : 'text-slate-200'
-                                    }`}>
-                                      {step.text}
-                                    </span>
-                                    {step.effortValue && (
-                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30 shrink-0">
-                                        ⏱ {formatEffortBadge(step.effortValue, step.effortUnit)}
-                                      </span>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-slate-500 italic py-1">
-                                No checklist actions defined yet. Click &ldquo;More Details & Edit&rdquo; to add checklist items.
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Notes Markdown Preview */}
-                          {item.notes && (
-                            <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
-                              <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider font-semibold">Notes</span>
-                              <div className="text-xs bg-black/30 p-3 rounded-lg border border-white/[0.05] max-h-48 overflow-y-auto">
-                                {renderSimpleMarkdown(item.notes)}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Drawer Actions */}
-                          <div className="flex justify-end items-center gap-2 pt-2 border-t border-white/[0.06]">
-                            <button
-                              onClick={() => openItemModal(item.id)}
-                              className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs px-4 py-2 rounded-lg transition-colors shadow-md flex items-center gap-1.5"
-                            >
-                              <span>More Details & Edit</span>
-                              <span className="text-sm">→</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
+              return (
+                <div
+                  key={epic.id}
+                  onClick={() => openItemModal(epic.id)}
+                  className="card-dominant cursor-pointer transition-all hover:scale-[1.01] p-3 rounded-xl"
+                  style={{ borderLeft: `3px solid ${secColor}` }}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-mono font-bold text-amber-400">#{epic.priority_rank}</span>
+                      <span className="text-xs font-semibold text-slate-200 truncate">{epic.title}</span>
                     </div>
-                  )
-                })}
+
+                    <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-slate-300 border border-white/[0.10] shrink-0 font-semibold">
+                      {stage.label}
+                    </span>
+                  </div>
+
+                  {/* Dual Stacked Progress Bars */}
+                  <div className="space-y-1 my-2 bg-black/20 p-2 rounded-lg border border-white/[0.04]">
+                    <div className="flex items-center justify-between text-[9px] font-mono text-slate-400">
+                      <span className="text-purple-300">🔬 Research {researchProg}%</span>
+                      <span className="text-emerald-300">⚡ Execution {executionProg}%</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="h-1 bg-white/[0.08] rounded-full overflow-hidden">
+                        <div className="h-full bg-purple-400 rounded-full transition-all" style={{ width: `${researchProg}%` }} />
+                      </div>
+                      <div className="h-1 bg-white/[0.08] rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${executionProg}%` }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                    <span style={{ color: secColor }}>{sec?.icon} {sec?.name}</span>
+                    <span>{formatDaysAgo(epic.updated_at)}</span>
+                  </div>
+                </div>
+              )
+            })}
+
+            {activeEpics.length === 0 && (
+              <div className="text-center py-12 text-slate-500 text-xs font-mono italic">
+                No active epics. Activate epics in the Sectors page.
               </div>
             )}
           </div>
         </div>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            2. TOP-RIGHT: EXPLORE PANEL (Staleness Sort)
+           ═══════════════════════════════════════════════════════════════════ */}
+        <div className="lane-glass rounded-2xl p-4 flex flex-col min-h-0 border border-purple-500/20 shadow-lg">
+          <div className="flex items-center justify-between pb-3 border-b border-purple-500/15 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🔬</span>
+              <h2 className="font-sans font-bold text-purple-200 text-sm">Explore Research</h2>
+              <span className="text-xs font-mono font-bold text-purple-300 bg-purple-500/15 px-2 py-0.5 rounded-full border border-purple-500/25">
+                {activeExploreItems.length} Open
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-purple-400">Oldest-Touched First</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pt-3 space-y-2.5 pr-1">
+            {activeExploreItems.map(exp => {
+              const parentEpic = getEpic(exp.epic_id)
+              const parentSector = getSector(parentEpic?.sector_id || '')
+              const sectorColor = parentSector ? `var(--color-${parentSector.color})` : '#3b82f6'
+              const daysUntouched = daysSince(exp.last_touched_at)
+
+              return (
+                <div
+                  key={exp.id}
+                  onClick={() => openItemModal(exp.epic_id)}
+                  className="p-3 rounded-xl bg-white/[0.03] border border-purple-500/20 hover:border-purple-500/40 hover:bg-purple-950/20 transition-all cursor-pointer shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 mb-0.5">
+                        <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-100 truncate">
+                        {exp.title || exp.notes.split('\n')[0] || 'Explore Topic'}
+                      </h4>
+                    </div>
+
+                    {exp.time_estimate_value && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                        ⏱ {formatEffortBadge(exp.time_estimate_value, (exp.time_estimate_unit as any) || 'hours')}
+                      </span>
+                    )}
+                  </div>
+
+                  {exp.notes && (
+                    <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed mt-1">
+                      {exp.notes}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mt-2 pt-1.5 border-t border-white/[0.04]">
+                    <span className={daysUntouched >= 7 ? 'text-amber-400 font-semibold' : ''}>
+                      Untouched for {daysUntouched === 0 ? 'today' : `${daysUntouched}d`}
+                    </span>
+                    <span className="text-purple-400">Click to expand finding →</span>
+                  </div>
+                </div>
+              )
+            })}
+
+            {activeExploreItems.length === 0 && (
+              <div className="text-center py-12 text-slate-500 text-xs font-mono italic">
+                No open research topics across your active epics.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            3. BOTTOM-LEFT: NEXT ACTIONS PANEL (Due Date & Effort Sort)
+           ═══════════════════════════════════════════════════════════════════ */}
+        <div className="lane-glass rounded-2xl p-4 flex flex-col min-h-0 border border-amber-500/20 shadow-lg">
+          <div className="flex items-center justify-between pb-3 border-b border-amber-500/15 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⚡</span>
+              <h2 className="font-sans font-bold text-amber-200 text-sm">Next Backlog</h2>
+              <span className="text-xs font-mono font-bold text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-500/25">
+                {activeNextItems.length} Open
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-amber-400">Due-Date & Effort Sort</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pt-3 space-y-2 pr-1">
+            {activeNextItems.map(nextItem => {
+              const parentEpic = getEpic(nextItem.epic_id)
+              const parentSector = getSector(parentEpic?.sector_id || '')
+              const sectorColor = parentSector ? `var(--color-${parentSector.color})` : '#3b82f6'
+
+              return (
+                <div
+                  key={nextItem.id}
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-amber-500/30 transition-all gap-2"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleTodayDone(nextItem)}
+                      className="w-4 h-4 rounded-full border-2 border-amber-400/70 hover:border-amber-300 hover:bg-amber-400/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                      title="Complete task"
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-semibold text-slate-100 block truncate">
+                        {nextItem.title}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                        <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {nextItem.time_estimate_value && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                        ⏱ {formatEffortBadge(nextItem.time_estimate_value, (nextItem.time_estimate_unit as any) || 'hours')}
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handlePromoteClick(nextItem)}
+                      className="px-2.5 py-1 text-xs font-mono font-bold text-slate-900 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 rounded-lg shadow-sm transition-all cursor-pointer flex items-center gap-1"
+                      title="Promote to Today Focus"
+                    >
+                      <span>⭐ Today</span>
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+
+            {activeNextItems.length === 0 && (
+              <div className="text-center py-12 text-slate-500 text-xs font-mono italic">
+                No open next items. Spawn from explore research or add to epics.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            4. BOTTOM-RIGHT: TODAY PANEL (Governed by today_cap)
+           ═══════════════════════════════════════════════════════════════════ */}
+        <div className="lane-glass rounded-2xl p-4 flex flex-col min-h-0 border border-amber-400/30 shadow-lg bg-amber-950/[0.08]">
+          <div className="flex items-center justify-between pb-3 border-b border-amber-400/20 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🎯</span>
+              <h2 className="font-sans font-bold text-amber-200 text-sm">Today's Focus</h2>
+              <span className="text-xs font-mono font-bold text-amber-300 bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-400/30">
+                {todayItems.length} / {todayCap}
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-slate-400">Drag to Reorder</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pt-3 space-y-2.5 pr-1">
+            {todayItems.map(item => {
+              const parentEpic = getEpic(item.epic_id)
+              const parentSector = getSector(parentEpic?.sector_id || '')
+              const sectorColor = parentSector ? `var(--color-${parentSector.color})` : '#3b82f6'
+              const isDragging = draggedTodayId === item.id
+              const isDragOver = dragOverTodayId === item.id
+
+              return (
+                <div
+                  key={item.id}
+                  draggable
+                  onDragStart={(e) => handleTodayDragStart(e, item.id)}
+                  onDragOver={(e) => handleTodayDragOver(e, item.id)}
+                  onDrop={(e) => handleTodayDrop(e, item.id)}
+                  onDragEnd={handleTodayDragEnd}
+                  className={`flex items-center justify-between p-3 rounded-xl transition-all gap-3 cursor-grab active:cursor-grabbing ${
+                    isDragging ? 'opacity-40 scale-95' : ''
+                  } ${
+                    isDragOver ? 'border-t-2 border-amber-400 bg-amber-500/20' : 'bg-amber-500/[0.12] border border-amber-400/30 hover:border-amber-400 shadow-md'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span className="text-slate-500 select-none text-xs">⠿</span>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleTodayDone(item)}
+                      className="w-5 h-5 rounded-full border-2 border-amber-400 bg-amber-400/20 hover:bg-amber-400/40 text-black flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                      title="Complete today's task"
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-bold text-slate-100 block truncate">
+                        {item.title}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                        <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {item.time_estimate_value && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-500/30">
+                        ⏱ {formatEffortBadge(item.time_estimate_value, (item.time_estimate_unit as any) || 'hours')}
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => demoteFromToday(item.id)}
+                      className="text-[10px] font-mono text-slate-400 hover:text-slate-200 bg-white/[0.06] hover:bg-white/[0.12] px-2 py-1 rounded-md border border-white/[0.08] transition-colors cursor-pointer"
+                      title="Return to Next backlog"
+                    >
+                      ↩
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+
+            {todayItems.length === 0 && (
+              <div className="text-center py-12 text-slate-500 text-xs font-mono italic">
+                Nothing committed for today. Click ⭐ Today on any Next action on the left.
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
+
+      {/* Today Focus Bump Modal */}
+      <TodayBumpModal
+        isOpen={targetNextItemToPromote !== null}
+        targetNextItemTitle={targetNextItemToPromote?.title || ''}
+        todayItems={todayItems}
+        onConfirmBump={handleConfirmBump}
+        onCancel={() => setTargetNextItemToPromote(null)}
+      />
     </div>
   )
 }

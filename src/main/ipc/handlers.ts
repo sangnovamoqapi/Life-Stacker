@@ -38,6 +38,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('nextItems:promoteToToday', (_, id) => nextItemsDb.promoteToToday(id))
   ipcMain.handle('nextItems:delete', (_, id) => nextItemsDb.deleteNextItem(id))
   ipcMain.handle('nextItems:reorder', (_, epicId, itemIds) => nextItemsDb.reorderNextItems(epicId, itemIds))
+  ipcMain.handle('nextItems:reorderToday', (_, itemIds) => nextItemsDb.reorderTodayItems(itemIds))
 
   // Backward-compatible Action Steps IPC (delegates to next_items)
   ipcMain.handle('actionSteps:list', (_, itemId) => nextItemsDb.listNextItems({ epic_id: itemId }))
