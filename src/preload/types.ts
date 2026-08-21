@@ -1,6 +1,16 @@
 // ──────────────────────────── Core Models ────────────────────────────
 
-export type ItemStatus = 'active' | 'paused' | 'blocked' | 'done' | 'queued'
+export type ItemStatus = 'active' | 'paused' | 'blocked' | 'done' | 'queued' | 'parked'
+
+export interface TimeBudget {
+  value: number
+  unit: 'months' | 'quarters' | 'years'
+}
+
+export interface TimeEstimate {
+  value: number
+  unit: 'hours' | 'days'
+}
 
 export interface ChecklistItem {
   id: string
@@ -17,7 +27,8 @@ export interface Item {
   sector_id: string
   title: string
   status: ItemStatus
-  progress: number // 0-100
+  progress: number // 0-100 (legacy stored progress, retained for backward compat)
+  time_budget?: TimeBudget | null
   notes: string | null
   priority_rank: number
   next_action: string | null
@@ -30,6 +41,7 @@ export interface NewItem {
   title: string
   status?: ItemStatus
   progress?: number
+  time_budget?: TimeBudget | null
   notes?: string | null
   next_action?: string | null
 }
@@ -67,12 +79,83 @@ export interface ItemFilters {
   search?: string
 }
 
+// ──────────────────────────── Explore Items ────────────────────────────
+
+export interface ExploreItem {
+  id: string
+  epic_id: string
+  title: string
+  notes: string
+  time_estimate_value?: number | null
+  time_estimate_unit?: 'mins' | 'hours' | 'days' | string | null
+  closed: boolean
+  last_touched_at: string
+  created_at: string
+}
+
+export interface NewExploreItem {
+  epic_id: string
+  title?: string
+  notes: string
+  time_estimate_value?: number | null
+  time_estimate_unit?: 'mins' | 'hours' | 'days' | string | null
+  closed?: boolean
+}
+
+// ──────────────────────────── Next Items ────────────────────────────
+
+export type NextItemStatus = 'next' | 'today' | 'done'
+
+export interface NextItem {
+  id: string
+  epic_id: string
+  parent_explore_id?: string | null
+  title: string
+  notes?: string | null
+  status: NextItemStatus
+  time_estimate_value?: number | null
+  time_estimate_unit?: 'hours' | 'days' | 'minutes' | 'mins' | string | null
+  actual_effort_value?: number | null
+  actual_effort_unit?: 'hours' | 'days' | 'minutes' | 'mins' | string | null
+  due_date?: string | null
+  sort_order: number
+  created_at: string
+  completed_at?: string | null
+}
+
+export interface NewNextItem {
+  epic_id: string
+  parent_explore_id?: string | null
+  title: string
+  notes?: string | null
+  status?: NextItemStatus
+  time_estimate_value?: number | null
+  time_estimate_unit?: string | null
+  due_date?: string | null
+  sort_order?: number
+}
+
+// Legacy ActionStep interface for backward compatibility
+export interface ActionStep {
+  id: string
+  item_id: string
+  content: string
+  is_done: boolean
+  sort_order: number
+  effort_value?: number | null
+  effort_unit?: string | null
+  actual_effort_value?: number | null
+  actual_effort_unit?: string | null
+  created_at: string
+  completed_at?: string | null
+}
+
 // ──────────────────────────── Action Log ────────────────────────────
 
 export interface ActionLogEntry {
   id: string
   item_id: string
-  field: 'status' | 'progress' | 'notes' | 'sector_id' | 'title' | 'next_action'
+  field: 'status' | 'progress' | 'notes' | 'sector_id' | 'title' | 'next_action' | 'time_budget'
   old_value: string | null
   new_value: string | null
   changed_at: string
@@ -168,7 +251,11 @@ export interface BackgroundConfig {
 }
 
 export interface AppSettings {
-  focus_limit: number
+  active_epic_cap: number
+  focus_limit: number // backward-compatible alias to active_epic_cap
+  today_cap: number
+  weekly_personal_hours: number | null
+  burn_tracking_enabled: boolean
   stale_threshold_days: number
   launch_at_login: boolean
   glass_intensity: number
@@ -176,20 +263,6 @@ export interface AppSettings {
   stack_review_day: number
   stack_review_time: string
   background_config: BackgroundConfig
-}
-
-export interface ActionStep {
-  id: string
-  item_id: string
-  content: string
-  is_done: boolean
-  sort_order: number
-  effort_value?: number | null
-  effort_unit?: string | null
-  actual_effort_value?: number | null
-  actual_effort_unit?: string | null
-  created_at: string
-  completed_at: string | null
 }
 
 // ──────────────────────────── Chat & Pending Actions ────────────────────────────
@@ -226,12 +299,28 @@ export interface LifeStackAPI {
     reorder(itemId: string, newRank: number): Promise<void>
     setUrgent(itemId: string): Promise<void>
   }
+  exploreItems: {
+    list(epicId?: string): Promise<ExploreItem[]>
+    create(data: NewExploreItem): Promise<ExploreItem>
+    update(id: string, changes: Partial<Omit<ExploreItem, 'id' | 'epic_id' | 'created_at'>>): Promise<ExploreItem>
+    toggleClosed(id: string): Promise<ExploreItem>
+    delete(id: string): Promise<void>
+  }
+  nextItems: {
+    list(filters?: { epic_id?: string; status?: NextItemStatus; parent_explore_id?: string }): Promise<NextItem[]>
+    create(data: NewNextItem): Promise<NextItem>
+    update(id: string, changes: Partial<Omit<NextItem, 'id' | 'epic_id' | 'created_at'>>): Promise<NextItem>
+    toggle(id: string): Promise<NextItem>
+    promoteToToday(id: string): Promise<NextItem>
+    delete(id: string): Promise<void>
+    reorder(epicId: string, itemIds: string[]): Promise<void>
+  }
   actionSteps: {
-    list(itemId: string): Promise<ActionStep[]>
-    listAll(): Promise<ActionStep[]>
-    create(itemId: string, content: string, options?: { effort_value?: number; effort_unit?: string }): Promise<ActionStep>
-    update(id: string, changes: Partial<{ content: string; is_done: boolean; sort_order: number; effort_value?: number | null; effort_unit?: string | null; actual_effort_value?: number | null; actual_effort_unit?: string | null }>): Promise<ActionStep>
-    toggle(id: string): Promise<ActionStep>
+    list(itemId: string): Promise<NextItem[]>
+    listAll(): Promise<NextItem[]>
+    create(itemId: string, content: string, options?: { effort_value?: number; effort_unit?: string }): Promise<NextItem>
+    update(id: string, changes: Partial<{ content: string; is_done: boolean; sort_order: number; effort_value?: number | null; effort_unit?: string | null; actual_effort_value?: number | null; actual_effort_unit?: string | null }>): Promise<NextItem>
+    toggle(id: string): Promise<NextItem>
     delete(id: string): Promise<void>
     reorder(itemId: string, stepIds: string[]): Promise<void>
   }
@@ -250,6 +339,7 @@ export interface LifeStackAPI {
   }
   memory: {
     search(queryText: string, topK?: number): Promise<MemorySearchResult[]>
+    reindexAll(): Promise<{ indexedEpics: number; totalChunks: number }>
   }
   ai: {
     checkStatus(): Promise<boolean>

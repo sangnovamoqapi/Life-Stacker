@@ -28,8 +28,8 @@ export const EffortPrompt: React.FC<EffortPromptProps> = ({ itemId, onSave, onSk
       <div className="flex items-center gap-2">
         <input
           type="number"
-          min="0.25"
-          step="0.25"
+          min="0"
+          step="any"
           value={amount}
           onChange={e => setAmount(parseFloat(e.target.value) || '')}
           placeholder="0.0"

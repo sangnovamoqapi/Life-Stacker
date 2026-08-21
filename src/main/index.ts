@@ -57,7 +57,7 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(() => {
   initDb()
-  backfillEmbeddings().catch(err => console.error('[Startup Backfill Error]:', err))
+  backfillEmbeddings().catch((err: any) => console.error('[Startup Backfill Error]:', err))
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(true)

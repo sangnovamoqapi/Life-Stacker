@@ -47,10 +47,10 @@ export const FocusStrip: React.FC = () => {
           <span className="text-xs text-blue-400">⚡</span>
         </div>
         <div className="flex items-baseline gap-1 mt-2">
-          <span className={`text-2xl font-mono font-bold leading-none ${activeCount > settings.focus_limit ? 'text-red-400' : 'text-blue-400'}`}>
+          <span className={`text-2xl font-mono font-bold leading-none ${activeCount > (settings.active_epic_cap ?? settings.focus_limit) ? 'text-red-400' : 'text-blue-400'}`}>
             {activeCount}
           </span>
-          <span className="text-sm font-mono text-slate-500 font-medium">/ {settings.focus_limit}</span>
+          <span className="text-sm font-mono text-slate-500 font-medium">/ {settings.active_epic_cap ?? settings.focus_limit}</span>
         </div>
       </div>
 

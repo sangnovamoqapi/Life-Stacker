@@ -32,8 +32,9 @@ export const TopBar: React.FC = () => {
     }
   }, [])
 
+  const activeCap = settings.active_epic_cap ?? settings.focus_limit ?? 5
   const activeCount = items.filter(i => i.status === 'active').length
-  const overLimit = activeCount > settings.focus_limit
+  const overLimit = activeCount > activeCap
 
   const getStatusTooltip = () => {
     if (aiReady) {
@@ -66,7 +67,7 @@ export const TopBar: React.FC = () => {
             : 'border-blue-500/30 bg-blue-500/10 text-blue-300'
         }`}>
           <div className={`w-1.5 h-1.5 rounded-full ${overLimit ? 'bg-red-400' : 'bg-blue-400 animate-pulse'}`} />
-          <span>Active {activeCount}/{settings.focus_limit}</span>
+          <span>Active {activeCount}/{activeCap}</span>
         </div>
       </div>
 

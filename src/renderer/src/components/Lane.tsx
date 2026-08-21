@@ -20,7 +20,7 @@ export const Lane: React.FC<LaneProps> = ({ sector }) => {
     ? combinedItems.filter(item => item.sector_id === sector.id)
     : allSectorItems
 
-  const openItems = filteredItems.filter(i => i.status !== 'done')
+  const openItems = filteredItems.filter(i => i.status !== 'done' && i.status !== 'parked')
   const doneItems = filteredItems.filter(i => i.status === 'done')
   const activeCount = openItems.filter(i => i.status === 'active').length
   const totalOpen = openItems.length

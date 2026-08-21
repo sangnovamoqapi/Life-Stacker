@@ -1,7 +1,46 @@
 import { getDb } from './connection'
 import { v4 as uuid } from 'uuid'
-import type { Item, NewItem, ItemFilters } from '../../preload/types'
+import type { Item, NewItem, ItemFilters, TimeBudget } from '../../preload/types'
 import { upsertChunksForItem } from './memory'
+
+interface ItemRow {
+  id: string
+  sector_id: string
+  title: string
+  status: any
+  progress: number
+  time_budget: string | null
+  notes: string | null
+  priority_rank: number
+  next_action: string | null
+  created_at: string
+  updated_at: string
+}
+
+function mapRow(row: ItemRow): Item {
+  let timeBudget: TimeBudget | null = null
+  if (row.time_budget) {
+    try {
+      timeBudget = JSON.parse(row.time_budget)
+    } catch {
+      timeBudget = null
+    }
+  }
+
+  return {
+    id: row.id,
+    sector_id: row.sector_id,
+    title: row.title,
+    status: row.status,
+    progress: row.progress,
+    time_budget: timeBudget,
+    notes: row.notes,
+    priority_rank: row.priority_rank,
+    next_action: row.next_action,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  }
+}
 
 export function listItems(filters?: ItemFilters): Item[] {
   const db = getDb()
@@ -22,7 +61,14 @@ export function listItems(filters?: ItemFilters): Item[] {
   }
 
   query += ' ORDER BY created_at DESC'
-  return db.prepare(query).all(...params) as Item[]
+  const rows = db.prepare(query).all(...params) as ItemRow[]
+  return rows.map(mapRow)
+}
+
+export function getItemById(id: string): Item | undefined {
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM items WHERE id = ?').get(id) as ItemRow | undefined
+  return row ? mapRow(row) : undefined
 }
 
 export function createItem(data: NewItem): Item {
@@ -30,38 +76,42 @@ export function createItem(data: NewItem): Item {
   const now = new Date().toISOString()
   const maxRankRes = db.prepare('SELECT COALESCE(MAX(priority_rank), 0) as maxRank FROM items').get() as { maxRank: number }
   const nextRank = maxRankRes.maxRank + 1
+  const id = uuid()
 
-  const item: Item = {
-    id: uuid(),
-    sector_id: data.sector_id,
-    title: data.title,
-    status: data.status ?? 'active',
-    progress: data.progress ?? 0,
-    notes: data.notes ?? null,
-    priority_rank: nextRank,
-    next_action: data.next_action ?? null,
-    created_at: now,
-    updated_at: now
-  }
+  const timeBudgetStr = data.time_budget ? JSON.stringify(data.time_budget) : null
 
   db.prepare(`
-    INSERT INTO items (id, sector_id, title, status, progress, notes, priority_rank, next_action, created_at, updated_at)
-    VALUES (@id, @sector_id, @title, @status, @progress, @notes, @priority_rank, @next_action, @created_at, @updated_at)
-  `).run(item)
+    INSERT INTO items (id, sector_id, title, status, progress, time_budget, notes, priority_rank, next_action, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    data.sector_id,
+    data.title,
+    data.status ?? 'active',
+    data.progress ?? 0,
+    timeBudgetStr,
+    data.notes ?? null,
+    nextRank,
+    data.next_action ?? null,
+    now,
+    now
+  )
 
   // Fire-and-forget vector embedding without blocking save
-  upsertChunksForItem(item.id).catch(err => {
+  upsertChunksForItem(id).catch(err => {
     console.error('[Memory] Fire-and-forget embed error on create:', err)
   })
 
-  return item
+  const created = getItemById(id)
+  if (!created) throw new Error('Failed to retrieve created item')
+  return created
 }
 
 export function updateItem(id: string, changes: Partial<Omit<Item, 'id' | 'created_at'>>): Item {
   const db = getDb()
   
   const result = db.transaction(() => {
-    const current = db.prepare('SELECT * FROM items WHERE id = ?').get(id) as Item
+    const current = getItemById(id)
     if (!current) throw new Error(`Item not found: ${id}`)
 
     const now = new Date().toISOString()
@@ -75,11 +125,28 @@ export function updateItem(id: string, changes: Partial<Omit<Item, 'id' | 'creat
       newStatus = 'queued'
     }
 
-    const updated = { 
+    // Completion rule: An Epic can only move to done when zero Next items remain open
+    if (newStatus === 'done' && current.status !== 'done') {
+      const openNextCount = db.prepare(`
+        SELECT COUNT(*) as count FROM next_items 
+        WHERE epic_id = ? AND status != 'done'
+      `).get(id) as { count: number }
+
+      if (openNextCount.count > 0) {
+        throw new Error(`Cannot mark Epic as Done while ${openNextCount.count} open Next item(s) exist.`)
+      }
+    }
+
+    const timeBudgetStr = changes.time_budget !== undefined 
+      ? (changes.time_budget ? JSON.stringify(changes.time_budget) : null)
+      : (current.time_budget ? JSON.stringify(current.time_budget) : null)
+
+    const updated: Item = { 
       ...current, 
       ...changes,
       progress: newProgress,
       status: newStatus,
+      time_budget: changes.time_budget !== undefined ? changes.time_budget : current.time_budget,
       updated_at: now 
     }
 
@@ -89,15 +156,15 @@ export function updateItem(id: string, changes: Partial<Omit<Item, 'id' | 'creat
       VALUES (?, ?, ?, ?, ?, ?)
     `)
 
-    const trackedFields: (keyof Item)[] = ['status', 'progress', 'notes', 'sector_id', 'title', 'next_action']
+    const trackedFields: (keyof Item)[] = ['status', 'progress', 'notes', 'sector_id', 'title', 'next_action', 'time_budget']
     for (const field of trackedFields) {
-      if (current[field] !== updated[field]) {
+      if (JSON.stringify(current[field]) !== JSON.stringify(updated[field])) {
         actionLogStmt.run(
           uuid(),
           id,
           field,
-          String(current[field] ?? ''),
-          String(updated[field] ?? ''),
+          current[field] ? (typeof current[field] === 'object' ? JSON.stringify(current[field]) : String(current[field])) : null,
+          updated[field] ? (typeof updated[field] === 'object' ? JSON.stringify(updated[field]) : String(updated[field])) : null,
           now
         )
       }
@@ -105,10 +172,20 @@ export function updateItem(id: string, changes: Partial<Omit<Item, 'id' | 'creat
 
     db.prepare(`
       UPDATE items
-      SET sector_id = @sector_id, title = @title, status = @status, progress = @progress,
-          notes = @notes, next_action = @next_action, updated_at = @updated_at
-      WHERE id = @id
-    `).run(updated)
+      SET sector_id = ?, title = ?, status = ?, progress = ?, time_budget = ?,
+          notes = ?, next_action = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      updated.sector_id,
+      updated.title,
+      updated.status,
+      updated.progress,
+      timeBudgetStr,
+      updated.notes,
+      updated.next_action,
+      updated.updated_at,
+      id
+    )
 
     return updated
   })()
@@ -128,6 +205,8 @@ export function deleteItem(id: string): void {
     if (!item) return
     
     // 1. Delete all referencing child tables to prevent foreign key violations
+    db.prepare('DELETE FROM next_items WHERE epic_id = ?').run(id)
+    db.prepare('DELETE FROM explore_items WHERE epic_id = ?').run(id)
     db.prepare('DELETE FROM action_steps WHERE item_id = ?').run(id)
     db.prepare('DELETE FROM action_log WHERE item_id = ?').run(id)
     db.prepare('DELETE FROM effort_log WHERE item_id = ?').run(id)

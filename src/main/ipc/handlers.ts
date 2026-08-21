@@ -1,12 +1,13 @@
 import { ipcMain, BrowserWindow, dialog, app, Notification } from 'electron'
 import * as sectorsDb from '../db/sectors'
 import * as itemsDb from '../db/items'
+import * as exploreItemsDb from '../db/explore-items'
+import * as nextItemsDb from '../db/next-items'
 import * as actionLogDb from '../db/action-log'
 import * as effortLogDb from '../db/effort-log'
 import * as settingsDb from '../db/settings'
 import * as edgesDb from '../db/edges'
 import * as memoryDb from '../db/memory'
-import * as actionStepsDb from '../db/action-steps'
 import * as ollamaClient from '../ai/ollama-client'
 import * as chatEngine from '../ai/chat'
 import { getDb } from '../db/connection'
@@ -22,14 +23,47 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('items:reorder', (_, itemId, newRank) => itemsDb.reorderItem(itemId, newRank))
   ipcMain.handle('items:setUrgent', (_, itemId) => itemsDb.setUrgent(itemId))
 
-  // Action Steps (Checklist) IPC
-  ipcMain.handle('actionSteps:list', (_, itemId) => actionStepsDb.listStepsForItem(itemId))
-  ipcMain.handle('actionSteps:listAll', () => actionStepsDb.listAllSteps())
-  ipcMain.handle('actionSteps:create', (_, itemId, content, options) => actionStepsDb.createStep(itemId, content, options))
-  ipcMain.handle('actionSteps:update', (_, id, changes) => actionStepsDb.updateStep(id, changes))
-  ipcMain.handle('actionSteps:toggle', (_, id) => actionStepsDb.toggleStep(id))
-  ipcMain.handle('actionSteps:delete', (_, id) => actionStepsDb.deleteStep(id))
-  ipcMain.handle('actionSteps:reorder', (_, itemId, stepIds) => actionStepsDb.reorderSteps(itemId, stepIds))
+  // Explore Items IPC
+  ipcMain.handle('exploreItems:list', (_, epicId) => exploreItemsDb.listExploreItems(epicId))
+  ipcMain.handle('exploreItems:create', (_, data) => exploreItemsDb.createExploreItem(data))
+  ipcMain.handle('exploreItems:update', (_, id, changes) => exploreItemsDb.updateExploreItem(id, changes))
+  ipcMain.handle('exploreItems:toggleClosed', (_, id) => exploreItemsDb.toggleExploreItemClosed(id))
+  ipcMain.handle('exploreItems:delete', (_, id) => exploreItemsDb.deleteExploreItem(id))
+
+  // Next Items IPC
+  ipcMain.handle('nextItems:list', (_, filters) => nextItemsDb.listNextItems(filters))
+  ipcMain.handle('nextItems:create', (_, data) => nextItemsDb.createNextItem(data))
+  ipcMain.handle('nextItems:update', (_, id, changes) => nextItemsDb.updateNextItem(id, changes))
+  ipcMain.handle('nextItems:toggle', (_, id) => nextItemsDb.toggleNextItem(id))
+  ipcMain.handle('nextItems:promoteToToday', (_, id) => nextItemsDb.promoteToToday(id))
+  ipcMain.handle('nextItems:delete', (_, id) => nextItemsDb.deleteNextItem(id))
+  ipcMain.handle('nextItems:reorder', (_, epicId, itemIds) => nextItemsDb.reorderNextItems(epicId, itemIds))
+
+  // Backward-compatible Action Steps IPC (delegates to next_items)
+  ipcMain.handle('actionSteps:list', (_, itemId) => nextItemsDb.listNextItems({ epic_id: itemId }))
+  ipcMain.handle('actionSteps:listAll', () => nextItemsDb.listNextItems())
+  ipcMain.handle('actionSteps:create', (_, itemId, content, options) => {
+    return nextItemsDb.createNextItem({
+      epic_id: itemId,
+      title: content,
+      time_estimate_value: options?.effort_value,
+      time_estimate_unit: options?.effort_unit
+    })
+  })
+  ipcMain.handle('actionSteps:update', (_, id, changes) => {
+    return nextItemsDb.updateNextItem(id, {
+      title: changes.content,
+      status: changes.is_done !== undefined ? (changes.is_done ? 'done' : 'next') : undefined,
+      sort_order: changes.sort_order,
+      time_estimate_value: changes.effort_value,
+      time_estimate_unit: changes.effort_unit,
+      actual_effort_value: changes.actual_effort_value,
+      actual_effort_unit: changes.actual_effort_unit
+    })
+  })
+  ipcMain.handle('actionSteps:toggle', (_, id) => nextItemsDb.toggleNextItem(id))
+  ipcMain.handle('actionSteps:delete', (_, id) => nextItemsDb.deleteNextItem(id))
+  ipcMain.handle('actionSteps:reorder', (_, itemId, stepIds) => nextItemsDb.reorderNextItems(itemId, stepIds))
 
   ipcMain.handle('sectors:list', () => sectorsDb.listSectors())
   ipcMain.handle('sectors:create', (_, data) => sectorsDb.createSector(data))
@@ -54,6 +88,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Vector Memory & AI status IPC
   ipcMain.handle('memory:search', (_, queryText, topK) => memoryDb.search(queryText, topK))
+  ipcMain.handle('memory:reindexAll', () => memoryDb.reindexAllVectorMemory())
   ipcMain.handle('ai:checkStatus', () => ollamaClient.checkStatus())
   ipcMain.handle('ai:getLastError', () => ollamaClient.getLastError())
 
@@ -65,7 +100,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('chat:rejectAction', (_, actionId: string) => chatEngine.rejectAction(actionId))
   ipcMain.handle('chat:clearHistory', () => chatEngine.clearHistory())
 
-  // Dev-only debug query channel (Amendment 11)
+  // Dev-only debug query channel
   ipcMain.handle('debug:runQuery', (_, sql: string) => {
     if (app.isPackaged) return []
     const db = getDb()

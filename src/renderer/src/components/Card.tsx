@@ -1,13 +1,14 @@
-import React, { useRef } from 'react'
+import React from 'react'
 import type { Item, Sector, ItemStatus } from '../types'
 import { useAppContext } from '../state/AppContext'
-import { parseChecklist, formatEffortBadge } from '../utils/checklist'
+import { formatEffortBadge } from '../utils/checklist'
 
 interface CardProps {
   item: Item
   sector: Sector
   isDominant?: boolean
   isSemanticMatch?: boolean
+  onReactivate?: (item: Item) => void
 }
 
 function daysSince(dateStr: string) {
@@ -29,36 +30,56 @@ const statusColors: Record<ItemStatus, string> = {
   paused: '#f59e0b',
   blocked: '#ef4444',
   done: '#10b981',
-  queued: '#64748b'
+  queued: '#64748b',
+  parked: '#a855f7'
 }
 
-export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, isSemanticMatch = false }) => {
-  const { updateItem, openItemModal, settings, setEffortPrompt, setChecklistEffortPrompt, getActionSteps, toggleActionStep } = useAppContext()
-  const progressRef = useRef<HTMLInputElement>(null)
+export const Card: React.FC<CardProps> = ({ 
+  item, 
+  sector, 
+  isDominant = false, 
+  isSemanticMatch = false,
+  onReactivate
+}) => {
+  const { 
+    updateItem, 
+    openItemModal, 
+    settings, 
+    setChecklistEffortPrompt, 
+    getNextItems, 
+    toggleNextItem,
+    getResearchProgress,
+    getExecutionProgress,
+    getEpicStage,
+    items
+  } = useAppContext()
   
   const daysUntouched = daysSince(item.updated_at)
   const isStale = (item.status === 'active' || item.status === 'paused') && daysUntouched >= settings.stale_threshold_days
   const sectorColor = `var(--color-${sector.color})`
   const rankLabel = `#${item.priority_rank}`
 
-  const checklist = parseChecklist(item.next_action)
+  const researchProgress = getResearchProgress(item.id)
+  const executionProgress = getExecutionProgress(item.id)
+  const stage = getEpicStage(item.id)
 
-  const handleProgressCommit = async (e: React.MouseEvent<HTMLInputElement>) => {
-    const val = parseInt((e.target as HTMLInputElement).value, 10)
-    if (val === item.progress) return
-    
-    let newStatus = item.status
-    if (val === 100) newStatus = 'done'
-    else if (item.status === 'done' && val < 100) newStatus = 'active'
-      
-    await updateItem(item.id, { progress: val, status: newStatus })
-    setEffortPrompt({ itemId: item.id, oldProgress: item.progress, newProgress: val })
-  }
+  const isParked = item.status === 'parked'
 
-  const setStatus = async (e: React.MouseEvent, status: ItemStatus) => {
+  const handleStatusChange = async (e: React.MouseEvent, newStatus: ItemStatus) => {
     e.stopPropagation()
-    if (status === item.status) return
-    await updateItem(item.id, { status })
+    if (newStatus === item.status) return
+
+    // If attempting to activate, check active cap
+    const activeCap = settings.active_epic_cap ?? settings.focus_limit ?? 5
+    const activeCount = items.filter(i => i.status === 'active').length
+    if (newStatus === 'active' && item.status !== 'active' && activeCount >= activeCap) {
+      if (onReactivate) {
+        onReactivate(item)
+        return
+      }
+    }
+
+    await updateItem(item.id, { status: newStatus })
   }
 
   // ─── Compact mode: single-line row ───
@@ -66,7 +87,9 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, is
     return (
       <div 
         onClick={() => openItemModal(item.id)}
-        className={`card-compact group cursor-pointer ${item.status === 'done' ? 'opacity-50' : ''}`}
+        className={`card-compact group cursor-pointer transition-all ${
+          item.status === 'done' ? 'opacity-50' : isParked ? 'opacity-65 border-dashed border-purple-500/30' : ''
+        }`}
       >
         <span className="text-[10px] font-mono text-slate-500 w-6 shrink-0">{rankLabel}</span>
         <div 
@@ -76,11 +99,24 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, is
         <span className={`text-[12px] font-medium text-slate-200 truncate flex-1 ${item.status === 'done' ? 'line-through text-slate-500' : ''}`}>
           {item.title}
         </span>
-        <div className="w-[40px] h-1.5 rounded-full overflow-hidden shrink-0 bg-white/[0.08]">
-          <div className="h-full rounded-full transition-all" style={{ width: `${item.progress}%`, backgroundColor: statusColors[item.status] || sectorColor }} />
+
+        {/* Stage Badge Compact */}
+        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/[0.06] text-slate-400 border border-white/[0.08] shrink-0">
+          {stage.label}
+        </span>
+
+        {/* Dual Mini Progress Bars */}
+        <div className="flex flex-col gap-0.5 w-[38px] shrink-0" title={`Research: ${researchProgress}% | Execution: ${executionProgress}%`}>
+          <div className="h-1 rounded-full bg-white/[0.08] overflow-hidden">
+            <div className="h-full bg-purple-400 transition-all duration-300" style={{ width: `${researchProgress}%` }} />
+          </div>
+          <div className="h-1 rounded-full bg-white/[0.08] overflow-hidden">
+            <div className="h-full bg-emerald-400 transition-all duration-300" style={{ width: `${executionProgress}%` }} />
+          </div>
         </div>
-        <span className="text-[10px] font-mono text-slate-400 shrink-0 w-[28px] text-right font-medium">
-          {item.progress}%
+
+        <span className="text-[10px] font-mono text-slate-400 shrink-0 w-[24px] text-right font-medium">
+          {executionProgress}%
         </span>
       </div>
     )
@@ -90,17 +126,26 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, is
   return (
     <div 
       onClick={() => openItemModal(item.id)}
-      className={`card-dominant cursor-pointer transition-all ${item.status === 'done' ? 'opacity-60' : ''}`}
+      className={`card-dominant cursor-pointer transition-all ${
+        item.status === 'done' ? 'opacity-60' : isParked ? 'opacity-70 border-dashed border-purple-500/40 bg-purple-950/10' : ''
+      }`}
       style={{ 
-        borderLeft: `3px solid ${sectorColor}`,
-        '--sector-glow': `${sectorColor}25` 
+        borderLeft: `3px solid ${isParked ? '#a855f7' : sectorColor}`,
+        '--sector-glow': `${isParked ? '#a855f725' : `${sectorColor}25`}` 
       } as React.CSSProperties}
     >
-      {/* Top row: Rank + Status Badge */}
+      {/* Top row: Rank + Stage + Status Badge */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
           <span className="text-slate-500 text-xs select-none">⠿</span>
           <span className="text-xs font-mono font-bold text-slate-300">{rankLabel}</span>
+          
+          {/* Stage Indicator Badge */}
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-slate-300 border border-white/[0.10] font-semibold flex items-center gap-1">
+            {stage.hasOpenExplore && stage.hasOpenNext ? '✨' : stage.hasOpenExplore ? '🔬' : stage.hasOpenNext ? '⚡' : '✓'}
+            <span>{stage.label}</span>
+          </span>
+
           {isSemanticMatch && (
             <span 
               className="text-[10px] font-bold text-amber-400 bg-amber-400/15 px-1.5 py-0.2 rounded border border-amber-400/30 cursor-help"
@@ -133,10 +178,10 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, is
 
       {/* Compact Step-Card Up-Next Line for Dominant Card */}
       {(() => {
-        const itemSteps = getActionSteps(item.id)
+        const itemSteps = getNextItems(item.id)
         const total = itemSteps.length
-        const doneCount = itemSteps.filter(s => s.is_done).length
-        const currentStep = itemSteps.find(s => !s.is_done)
+        const doneCount = itemSteps.filter(s => s.status === 'done').length
+        const currentStep = itemSteps.find(s => s.status !== 'done')
 
         if (total === 0) return null
 
@@ -158,16 +203,16 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, is
                 <button
                   type="button"
                   onClick={async () => {
-                    const toggled = await toggleActionStep(currentStep.id)
-                    if (toggled.is_done) {
+                    const toggled = await toggleNextItem(currentStep.id)
+                    if (toggled.status === 'done') {
                       setChecklistEffortPrompt({
                         itemId: item.id,
                         checklistItem: {
                           id: currentStep.id,
-                          text: currentStep.content,
+                          text: currentStep.title,
                           completed: true,
-                          effortValue: currentStep.effort_value ?? undefined,
-                          effortUnit: (currentStep.effort_unit as any) || undefined
+                          effortValue: currentStep.time_estimate_value ?? undefined,
+                          effortUnit: (currentStep.time_estimate_unit as any) || undefined
                         }
                       })
                     }
@@ -176,18 +221,18 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, is
                   title="Click to complete step"
                 />
                 <span className="text-xs font-semibold text-slate-100 truncate flex-1">
-                  {currentStep.content}
+                  {currentStep.title}
                 </span>
-                {currentStep.effort_value && (
+                {currentStep.time_estimate_value && (
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25 shrink-0">
-                    ⏱ {formatEffortBadge(currentStep.effort_value, (currentStep.effort_unit as any) || 'hours')}
+                    ⏱ {formatEffortBadge(currentStep.time_estimate_value, (currentStep.time_estimate_unit as any) || 'hours')}
                   </span>
                 )}
               </div>
             ) : (
               <div className="flex items-center gap-2 text-xs text-emerald-400 font-medium">
                 <span>✓</span>
-                <span>All steps completed</span>
+                <span>All next steps completed</span>
               </div>
             )}
           </div>
@@ -211,37 +256,61 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, is
         )}
       </div>
 
-      {/* Single Sleek Progress Bar (Pointer Cursor on Hover) */}
-      <div className="flex items-center gap-3 mb-2.5" onClick={e => e.stopPropagation()}>
-        <div className="relative flex-1 h-2 bg-white/[0.08] rounded-full overflow-hidden cursor-pointer">
-          <div 
-            className="h-full rounded-full transition-all duration-200"
-            style={{ width: `${item.progress}%`, backgroundColor: statusColors[item.status] || sectorColor }}
-          />
-          <input 
-            ref={progressRef}
-            type="range" 
-            min="0" max="100" step="5"
-            defaultValue={item.progress}
-            onMouseUp={handleProgressCommit}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            title={`Progress: ${item.progress}% (click/drag to update)`}
-          />
+      {/* Dual Stacked Progress Bars (Research & Execution) */}
+      <div className="space-y-1.5 mb-3 bg-black/20 p-2 rounded-xl border border-white/[0.04]" onClick={e => e.stopPropagation()}>
+        {/* Research Progress */}
+        <div>
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1">
+            <span className="flex items-center gap-1.5 text-purple-300 font-semibold">
+              <span>🔬</span> Research
+            </span>
+            <span className="font-bold text-slate-300">{researchProgress}%</span>
+          </div>
+          <div className="h-1.5 bg-white/[0.08] rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-purple-500 to-indigo-400 rounded-full transition-all duration-300"
+              style={{ width: `${researchProgress}%` }}
+            />
+          </div>
         </div>
-        <span className="text-xs font-mono text-slate-300 min-w-[32px] text-right font-bold">
-          {item.progress}%
-        </span>
+
+        {/* Execution Progress */}
+        <div>
+          <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1">
+            <span className="flex items-center gap-1.5 text-emerald-300 font-semibold">
+              <span>⚡</span> Execution
+            </span>
+            <span className="font-bold text-slate-300">{executionProgress}%</span>
+          </div>
+          <div className="h-1.5 bg-white/[0.08] rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 rounded-full transition-all duration-300"
+              style={{ width: `${executionProgress}%` }}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Quick Status Bar */}
-      {item.status !== 'done' && (
-        <div className="flex gap-1.5 mt-2.5 pt-2 border-t border-white/[0.06]" onClick={e => e.stopPropagation()}>
-          {(['active', 'paused', 'blocked', 'done'] as const).map(s => {
+      {/* Quick Status Bar / Reactivate Button */}
+      {isParked ? (
+        <div className="pt-2 border-t border-purple-500/20 flex items-center justify-between" onClick={e => e.stopPropagation()}>
+          <span className="text-[10px] font-mono text-purple-300">Parked Epic</span>
+          <button
+            type="button"
+            onClick={e => handleStatusChange(e, 'active')}
+            className="px-3 py-1 text-xs font-bold text-slate-900 bg-gradient-to-r from-purple-400 to-amber-400 hover:from-purple-300 hover:to-amber-300 rounded-lg shadow-sm transition-all cursor-pointer"
+          >
+            ⚡ Reactivate
+          </button>
+        </div>
+      ) : item.status !== 'done' && (
+        <div className="flex gap-1.5 mt-1 pt-2 border-t border-white/[0.06]" onClick={e => e.stopPropagation()}>
+          {(['active', 'paused', 'blocked', 'parked', 'done'] as const).map(s => {
             const isCurrent = item.status === s
             return (
               <button
                 key={s}
-                onClick={(e) => setStatus(e, s)}
+                onClick={(e) => handleStatusChange(e, s)}
                 className={`text-[9px] uppercase font-mono px-2 py-1 rounded border transition-all cursor-pointer flex-1 text-center font-semibold ${
                   isCurrent 
                     ? 'shadow-md font-bold' 
@@ -262,4 +331,3 @@ export const Card: React.FC<CardProps> = ({ item, sector, isDominant = false, is
     </div>
   )
 }
-

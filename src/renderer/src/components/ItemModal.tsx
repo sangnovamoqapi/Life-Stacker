@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAppContext } from '../state/AppContext'
-import type { Item, ItemStatus, ActionLogEntry, EffortEntry, EffortTotal, TabType, ChecklistItem } from '../types'
+import type { Item, ItemStatus, ActionLogEntry, EffortEntry, EffortTotal, TabType, TimeBudget, TimeEstimate } from '../types'
 import { EffortPrompt } from './EffortPrompt'
-import { parseChecklist, formatChecklist, formatEffortBadge } from '../utils/checklist'
+import { ParkSwapModal } from './ParkSwapModal'
+import { formatEffortBadge } from '../utils/checklist'
 import { renderSimpleMarkdown } from '../utils/markdown'
 import { formatActionLogEntry } from '../utils/historyFormatter'
+
+type TimeEstimateUnit = NonNullable<TimeEstimate['unit']>
 
 export const ItemModal: React.FC = () => {
   const { 
@@ -22,11 +25,18 @@ export const ItemModal: React.FC = () => {
     setUrgent,
     settings,
     setChecklistEffortPrompt,
-    getActionSteps,
-    addActionStep,
-    toggleActionStep,
-    deleteActionStep,
-    updateActionStep
+    getNextItems, 
+    addNextItem, 
+    toggleNextItem, 
+    deleteNextItem, 
+    updateNextItem,
+    promoteToToday,
+    demoteFromToday,
+    getExploreItems,
+    addExploreItem,
+    updateExploreItem,
+    deleteExploreItem,
+    toggleExploreItemClosed
   } = useAppContext()
 
   const existingItem = selectedItemId ? getItemById(selectedItemId) : undefined
@@ -40,13 +50,39 @@ export const ItemModal: React.FC = () => {
   const [notesTab, setNotesTab] = useState<'edit' | 'preview'>(isNew || !existingItem?.notes ? 'edit' : 'preview')
   const notesTextareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Action steps state
-  const existingSteps = selectedItemId ? getActionSteps(selectedItemId) : []
-  const [localSteps, setLocalSteps] = useState<{ id: string; content: string; is_done: boolean; effort_value?: number | null; effort_unit?: string | null }[]>([])
+  // Time budget
+  const initialBudget: TimeBudget | null = existingItem?.time_budget 
+    ? (typeof existingItem.time_budget === 'string' ? JSON.parse(existingItem.time_budget) : existingItem.time_budget) 
+    : null
+  const [budgetValue, setBudgetValue] = useState<number | undefined>(initialBudget?.value)
+  const [budgetUnit, setBudgetUnit] = useState<'months' | 'quarters' | 'years'>(initialBudget?.unit || 'months')
+
+  // Next items state
+  const existingNext = selectedItemId ? getNextItems(selectedItemId) : []
+  const [localNext, setLocalNext] = useState<{ id: string; parent_explore_id?: string | null; title: string; status: 'next' | 'today' | 'done'; time_estimate_value?: number | null; time_estimate_unit?: string | null }[]>([])
   const [newStepText, setNewStepText] = useState('')
   const [newStepEffort, setNewStepEffort] = useState<number | undefined>(undefined)
-  const [newStepUnit, setNewStepUnit] = useState<'mins' | 'hours' | 'days'>('hours')
-  
+  const [newStepUnit, setNewStepUnit] = useState<TimeEstimateUnit>('hours')
+
+  // Explore items state
+  const existingExplore = selectedItemId ? getExploreItems(selectedItemId) : []
+  const [localExplore, setLocalExplore] = useState<{ id: string; title: string; notes: string; closed: boolean; time_estimate_value?: number | null; time_estimate_unit?: string | null }[]>([])
+  const [expandedExploreIds, setExpandedExploreIds] = useState<Set<string>>(new Set())
+  const [newExploreTitle, setNewExploreTitle] = useState('')
+  const [newExploreNotes, setNewExploreNotes] = useState('')
+  const [newExploreEffort, setNewExploreEffort] = useState<number | undefined>(undefined)
+  const [newExploreUnit, setNewExploreUnit] = useState<TimeEstimateUnit>('hours')
+  const [showAddExploreForm, setShowAddExploreForm] = useState(false)
+
+  // Spawning next item from explore state
+  const [spawningExploreId, setSpawningExploreId] = useState<string | null>(null)
+  const [spawnNextTitle, setSpawnNextTitle] = useState('')
+  const [spawnNextEffort, setSpawnNextEffort] = useState<number | undefined>(undefined)
+  const [spawnNextUnit, setSpawnNextUnit] = useState<TimeEstimateUnit>('hours')
+
+  // Swap Modal State
+  const [showParkSwapModal, setShowParkSwapModal] = useState(false)
+
   const [isUrgent, setIsUrgent] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('details')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -55,6 +91,9 @@ export const ItemModal: React.FC = () => {
   const [effortLog, setEffortLog] = useState<EffortEntry[]>([])
   const [effortTotals, setEffortTotals] = useState<EffortTotal | null>(null)
   const [showEffortInline, setShowEffortInline] = useState(false)
+
+  const activeCap = settings.active_epic_cap ?? settings.focus_limit ?? 5
+  const activeCount = items.filter(i => i.status === 'active').length
 
   useEffect(() => {
     if (selectedItemId && activeTab === 'history') {
@@ -67,69 +106,199 @@ export const ItemModal: React.FC = () => {
   }, [selectedItemId, activeTab])
 
   // Step operations
-  const displaySteps = isNew ? localSteps : existingSteps
+  const displayNext = isNew ? localNext : existingNext
+  const displayExplore = isNew ? localExplore : existingExplore
 
-  const handleAddStep = async (e?: React.FormEvent) => {
+  // Split Next items into standard Next and Today items
+  const standardNextItems = displayNext.filter(n => n.status === 'next')
+  const todayItems = displayNext.filter(n => n.status === 'today')
+  const doneNextItems = displayNext.filter(n => n.status === 'done')
+
+  const handleAddNext = async (e?: React.FormEvent, parentExploreId?: string | null) => {
     if (e) e.preventDefault()
     const trimmed = newStepText.trim()
     if (!trimmed) return
 
-    const effortOpts = newStepEffort && newStepEffort > 0 ? { effort_value: newStepEffort, effort_unit: newStepUnit } : undefined
-
     if (isNew) {
-      setLocalSteps(prev => [...prev, { 
+      setLocalNext(prev => [...prev, { 
         id: `temp-${Date.now()}`, 
-        content: trimmed, 
-        is_done: false,
-        effort_value: newStepEffort,
-        effort_unit: newStepEffort ? newStepUnit : undefined
+        parent_explore_id: parentExploreId || null,
+        title: trimmed, 
+        status: 'next',
+        time_estimate_value: newStepEffort,
+        time_estimate_unit: newStepEffort ? newStepUnit : undefined
       }])
     } else if (selectedItemId) {
-      await addActionStep(selectedItemId, trimmed, effortOpts)
+      await addNextItem({
+        epic_id: selectedItemId,
+        parent_explore_id: parentExploreId || undefined,
+        title: trimmed,
+        time_estimate_value: newStepEffort,
+        time_estimate_unit: newStepEffort ? newStepUnit : undefined
+      })
     }
     setNewStepText('')
     setNewStepEffort(undefined)
   }
 
-  const handleToggleStep = async (stepId: string, idx: number) => {
+  const handleSpawnFromExplore = async (exploreId: string) => {
+    const trimmed = spawnNextTitle.trim()
+    if (!trimmed) return
+
     if (isNew) {
-      setLocalSteps(prev => prev.map((s, i) => i === idx ? { ...s, is_done: !s.is_done } : s))
+      setLocalNext(prev => [...prev, {
+        id: `temp-${Date.now()}`,
+        parent_explore_id: exploreId,
+        title: trimmed,
+        status: 'next',
+        time_estimate_value: spawnNextEffort,
+        time_estimate_unit: spawnNextEffort ? spawnNextUnit : undefined
+      }])
+    } else if (selectedItemId) {
+      await addNextItem({
+        epic_id: selectedItemId,
+        parent_explore_id: exploreId,
+        title: trimmed,
+        time_estimate_value: spawnNextEffort,
+        time_estimate_unit: spawnNextEffort ? spawnNextUnit : undefined
+      })
+      showToast('Spawned Next action from research finding', 'success')
+    }
+
+    setSpawnNextTitle('')
+    setSpawnNextEffort(undefined)
+    setSpawningExploreId(null)
+  }
+
+  const handleToggleNext = async (stepId: string) => {
+    if (isNew) {
+      setLocalNext(prev => prev.map(s => s.id === stepId ? { ...s, status: s.status === 'done' ? 'next' : 'done' } : s))
     } else {
-      const target = existingSteps.find(s => s.id === stepId)
-      const willBeDone = target ? !target.is_done : true
-      await toggleActionStep(stepId)
+      const target = existingNext.find(s => s.id === stepId)
+      const willBeDone = target ? target.status !== 'done' : true
+      await toggleNextItem(stepId)
       if (willBeDone && selectedItemId && target) {
         setChecklistEffortPrompt({
           itemId: selectedItemId,
           checklistItem: {
             id: target.id,
-            text: target.content,
+            text: target.title,
             completed: true,
-            effortValue: target.effort_value ?? undefined,
-            effortUnit: (target.effort_unit as any) || undefined
+            effortValue: target.time_estimate_value ?? undefined,
+            effortUnit: (target.time_estimate_unit as any) || undefined
           }
         })
       }
     }
   }
 
-  const handleDeleteStep = async (stepId: string, idx: number) => {
+  const handlePromoteToToday = async (stepId: string) => {
     if (isNew) {
-      setLocalSteps(prev => prev.filter((_, i) => i !== idx))
+      setLocalNext(prev => prev.map(s => s.id === stepId ? { ...s, status: 'today' } : s))
     } else {
-      await deleteActionStep(stepId)
+      await promoteToToday(stepId)
+      showToast('Pulled into Today focus', 'success')
     }
   }
 
-  const handleUpdateStepText = async (stepId: string, idx: number, text: string) => {
+  const handleDemoteFromToday = async (stepId: string) => {
     if (isNew) {
-      setLocalSteps(prev => prev.map((s, i) => i === idx ? { ...s, content: text } : s))
+      setLocalNext(prev => prev.map(s => s.id === stepId ? { ...s, status: 'next' } : s))
     } else {
-      await updateActionStep(stepId, { content: text })
+      await demoteFromToday(stepId)
+      showToast('Moved back to Next stack', 'info')
     }
   }
 
-  // Rich text formatting helper
+  const handleDeleteNext = async (stepId: string) => {
+    if (isNew) {
+      setLocalNext(prev => prev.filter(s => s.id !== stepId))
+    } else {
+      await deleteNextItem(stepId)
+    }
+  }
+
+  const handleUpdateNextTitle = async (stepId: string, text: string) => {
+    if (isNew) {
+      setLocalNext(prev => prev.map(s => s.id === stepId ? { ...s, title: text } : s))
+    } else {
+      await updateNextItem(stepId, { title: text })
+    }
+  }
+
+  // ─── Explore item operations ───
+  const toggleExploreExpanded = (id: string) => {
+    setExpandedExploreIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleAddExplore = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    const trimmedTitle = newExploreTitle.trim()
+    const trimmedNotes = newExploreNotes.trim()
+    if (!trimmedTitle && !trimmedNotes) return
+
+    const titleToSave = trimmedTitle || trimmedNotes.split('\n')[0]
+
+    if (isNew) {
+      setLocalExplore(prev => [...prev, {
+        id: `temp-exp-${Date.now()}`,
+        title: titleToSave,
+        notes: trimmedNotes,
+        closed: false,
+        time_estimate_value: newExploreEffort,
+        time_estimate_unit: newExploreEffort ? newExploreUnit : undefined
+      }])
+    } else if (selectedItemId) {
+      await addExploreItem({
+        epic_id: selectedItemId,
+        title: titleToSave,
+        notes: trimmedNotes,
+        time_estimate_value: newExploreEffort,
+        time_estimate_unit: newExploreEffort ? newExploreUnit : undefined
+      })
+    }
+    setNewExploreTitle('')
+    setNewExploreNotes('')
+    setNewExploreEffort(undefined)
+    setShowAddExploreForm(false)
+  }
+
+  const handleToggleExploreClosed = async (expId: string) => {
+    if (isNew) {
+      setLocalExplore(prev => prev.map(e => e.id === expId ? { ...e, closed: !e.closed } : e))
+    } else {
+      await toggleExploreItemClosed(expId)
+    }
+  }
+
+  const handleDeleteExplore = async (expId: string) => {
+    if (isNew) {
+      setLocalExplore(prev => prev.filter(e => e.id !== expId))
+    } else {
+      try {
+        await deleteExploreItem(expId)
+        showToast('Explore topic deleted', 'info')
+      } catch (err: any) {
+        showToast(err?.message || 'Failed to delete Explore topic', 'warning')
+      }
+    }
+  }
+
+  const getLinkedNextCount = (expId: string) => {
+    return displayNext.filter(n => n.parent_explore_id === expId).length
+  }
+
+  const getExploreTitle = (expId?: string | null) => {
+    if (!expId) return null
+    const found = displayExplore.find(e => e.id === expId)
+    return found?.title || found?.notes.split('\n')[0] || 'Research Finding'
+  }
+
   const insertFormatting = (prefix: string, suffix: string = '') => {
     const textarea = notesTextareaRef.current
     if (!textarea) return
@@ -145,9 +314,37 @@ export const ItemModal: React.FC = () => {
     }, 10)
   }
 
+  const handleStatusSelect = (s: ItemStatus) => {
+    if (s === 'active' && (!existingItem || existingItem.status !== 'active') && activeCount >= activeCap) {
+      setShowParkSwapModal(true)
+      return
+    }
+    setStatus(s)
+    if (s === 'done') setProgress(100)
+    if (s !== 'done' && progress === 100) setProgress(95)
+  }
+
+  const handleConfirmParkSwap = async (epicToParkId: string) => {
+    await updateItem(epicToParkId, { status: 'parked' })
+    setStatus('active')
+    setShowParkSwapModal(false)
+    const parkedEpic = items.find(i => i.id === epicToParkId)
+    showToast(`Swapped: this epic will be active, "${parkedEpic?.title || 'Epic'}" parked`, 'success')
+  }
+
   const handleSave = async () => {
     if (!title.trim()) return showToast('Title is required', 'warning')
     if (!sectorId) return showToast('Sector is required', 'warning')
+
+    // Completion Rule Check
+    if (status === 'done') {
+      const openCount = displayNext.filter(n => n.status !== 'done').length
+      if (openCount > 0) {
+        return showToast(`Cannot mark Epic as Done while ${openCount} open Next item(s) exist.`, 'warning')
+      }
+    }
+
+    const budgetData: TimeBudget | null = budgetValue ? { value: budgetValue, unit: budgetUnit } : null
 
     if (isNew) {
       const newItem = await createItem({ 
@@ -155,22 +352,43 @@ export const ItemModal: React.FC = () => {
         sector_id: sectorId, 
         status, 
         progress, 
-        notes: notes.trim() || undefined
+        notes: notes.trim() || undefined,
+        time_budget: budgetData || undefined
       })
-      for (const s of localSteps) {
-        if (!s.content.trim()) continue
-        const created = await window.api.actionSteps.create(newItem.id, s.content.trim(), {
-          effort_value: s.effort_value || undefined,
-          effort_unit: s.effort_unit || undefined
+
+      // Create explore items
+      const exploreIdMap = new Map<string, string>()
+      for (const exp of localExplore) {
+        if (!exp.title.trim() && !exp.notes.trim()) continue
+        const createdExp = await window.api.exploreItems.create({
+          epic_id: newItem.id,
+          title: exp.title.trim() || exp.notes.split('\n')[0],
+          notes: exp.notes.trim(),
+          time_estimate_value: exp.time_estimate_value || undefined,
+          time_estimate_unit: exp.time_estimate_unit || undefined,
+          closed: exp.closed
         })
-        if (s.is_done) {
-          await window.api.actionSteps.toggle(created.id)
-        }
+        exploreIdMap.set(exp.id, createdExp.id)
       }
+
+      // Create next items
+      for (const s of localNext) {
+        if (!s.title.trim()) continue
+        const mappedParentId = s.parent_explore_id ? exploreIdMap.get(s.parent_explore_id) || undefined : undefined
+        await window.api.nextItems.create({
+          epic_id: newItem.id,
+          parent_explore_id: mappedParentId,
+          title: s.title.trim(),
+          time_estimate_value: s.time_estimate_value || undefined,
+          time_estimate_unit: s.time_estimate_unit || undefined,
+          status: s.status
+        })
+      }
+
       if (isUrgent) {
         await setUrgent(newItem.id)
       }
-      showToast('Item created', 'success')
+      showToast('Epic created', 'success')
     } else if (existingItem) {
       const changes: Partial<Omit<Item, 'id' | 'created_at'>> = {}
       if (title.trim() !== existingItem.title) changes.title = title.trim()
@@ -178,10 +396,14 @@ export const ItemModal: React.FC = () => {
       if (status !== existingItem.status) changes.status = status
       if (progress !== existingItem.progress) changes.progress = progress
       if (notes !== existingItem.notes) changes.notes = notes
+      changes.time_budget = budgetData as any
       
-      if (Object.keys(changes).length > 0) {
+      try {
         await updateItem(existingItem.id, changes)
-        showToast('Item updated', 'success')
+        showToast('Epic updated', 'success')
+      } catch (err: any) {
+        showToast(err?.message || 'Failed to update epic', 'warning')
+        return
       }
     }
     closeModal()
@@ -189,7 +411,7 @@ export const ItemModal: React.FC = () => {
 
   const handleDelete = async () => {
     if (existingItem) await deleteItem(existingItem.id)
-    showToast('Item deleted', 'info')
+    showToast('Epic deleted', 'info')
     closeModal()
   }
   
@@ -200,11 +422,6 @@ export const ItemModal: React.FC = () => {
     window.api.effortLog.listForItem(selectedItemId).then(setEffortLog)
     window.api.effortLog.getTotals(selectedItemId).then(res => setEffortTotals(res[0] || null))
   }
-
-  // Active limit check
-  const isSettingActive = status === 'active' && (!existingItem || existingItem.status !== 'active')
-  const activeCount = items.filter(i => i.status === 'active').length
-  const overLimit = isSettingActive && activeCount >= settings.focus_limit
 
   const statusStyles: Record<ItemStatus, { active: string; inactive: string }> = {
     active: {
@@ -226,6 +443,10 @@ export const ItemModal: React.FC = () => {
     queued: {
       active: 'bg-slate-500/20 text-slate-300 border-slate-500/60 font-bold',
       inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08]'
+    },
+    parked: {
+      active: 'bg-purple-500/20 text-purple-300 border-purple-500/60 shadow-[0_0_12px_rgba(168,85,247,0.3)] font-bold',
+      inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08] hover:border-purple-500/40 hover:text-slate-200'
     }
   }
 
@@ -235,10 +456,9 @@ export const ItemModal: React.FC = () => {
       onClick={closeModal}
     >
       <div 
-        className="bg-[#0f141f]/95 border border-white/[0.12] w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
+        className="bg-[#0f141f]/95 border border-white/[0.12] w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[94vh] overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        
         {/* Header Tabs */}
         <div className="flex items-center justify-between border-b border-white/[0.08] px-6 pt-4 pb-0 bg-white/[0.02]">
           <div className="flex gap-6">
@@ -269,171 +489,20 @@ export const ItemModal: React.FC = () => {
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
           {activeTab === 'details' && (
             <>
-              {/* Title */}
+              {/* Title & Basic Info Row */}
               <div>
                 <input
                   type="text"
                   value={title}
                   onChange={e => setTitle(e.target.value)}
-                  placeholder="Task title..."
+                  placeholder="Epic title..."
                   className="w-full bg-transparent font-sans text-2xl font-bold text-slate-100 outline-none placeholder:text-slate-600 tracking-tight"
                   autoFocus
                 />
               </div>
 
-              {/* Next Action Steps Spine List (Amendment 12) */}
-              <div className="bg-[#0a0d14]/80 border border-white/[0.08] rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">
-                      Next Action Steps
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400 bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06]">
-                      {displaySteps.filter(s => s.is_done).length}/{displaySteps.length} done
-                    </span>
-                  </div>
-                  {displaySteps.length > 0 && (
-                    <span className="text-[11px] font-mono text-slate-400">
-                      {Math.round((displaySteps.filter(s => s.is_done).length / displaySteps.length) * 100)}%
-                    </span>
-                  )}
-                </div>
-
-                {/* Steps Spine List */}
-                <div className="space-y-0 relative pl-1">
-                  {displaySteps.map((step, idx) => {
-                    const isDone = step.is_done
-                    const isFirstUndone = !isDone && displaySteps.slice(0, idx).every(s => s.is_done)
-
-                    return (
-                      <div key={step.id} className="group relative flex items-center gap-3 py-2">
-                        {/* Vertical Spine Line */}
-                        {idx < displaySteps.length - 1 && (
-                          <div 
-                            className="absolute left-[8px] top-6 bottom-[-8px] w-0.5 transition-colors duration-200"
-                            style={{
-                              backgroundColor: isDone ? '#e8b23d' : 'rgba(255, 255, 255, 0.10)'
-                            }}
-                          />
-                        )}
-
-                        {/* Node (Circle) */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStep(step.id, idx)}
-                          className={`w-[18px] h-[18px] rounded-full shrink-0 flex items-center justify-center transition-all duration-200 z-10 cursor-pointer ${
-                            isDone
-                              ? 'bg-amber-400 border-2 border-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.4)]'
-                              : isFirstUndone
-                              ? 'border-2 border-amber-400 bg-[#0f141f] shadow-[0_0_8px_rgba(251,191,36,0.3)] hover:scale-110'
-                              : 'border-2 border-slate-600 bg-[#0f141f] hover:border-slate-400'
-                          }`}
-                          title={isDone ? 'Mark step undone' : 'Mark step done'}
-                        >
-                          {isDone && <span className="text-[10px] font-bold leading-none">✓</span>}
-                        </button>
-
-                        {/* Step Content Input */}
-                        <input
-                          type="text"
-                          value={step.content}
-                          onChange={e => handleUpdateStepText(step.id, idx, e.target.value)}
-                          className={`flex-1 bg-transparent text-sm outline-none transition-all ${
-                            isDone 
-                              ? 'line-through text-slate-500' 
-                              : isFirstUndone 
-                              ? 'font-semibold text-slate-100' 
-                              : 'text-slate-300'
-                          }`}
-                        />
-
-                        {step.effort_value && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (selectedItemId) {
-                                setChecklistEffortPrompt({
-                                  itemId: selectedItemId,
-                                  checklistItem: {
-                                    id: step.id,
-                                    text: step.content,
-                                    completed: step.is_done,
-                                    effortValue: step.effort_value ?? undefined,
-                                    effortUnit: (step.effort_unit as any) || undefined
-                                  }
-                                })
-                              }
-                            }}
-                            className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30 shrink-0 hover:bg-blue-500/25 transition-colors cursor-pointer"
-                            title="Click to log effort"
-                          >
-                            ⏱ {formatEffortBadge(step.effort_value, (step.effort_unit as any) || 'hours')}
-                          </button>
-                        )}
-
-                        {isFirstUndone && (
-                          <span className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30 shrink-0">
-                            Up Next
-                          </span>
-                        )}
-
-                        {/* Delete Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteStep(step.id, idx)}
-                          className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 text-xs px-1.5 transition-opacity cursor-pointer"
-                          title="Delete step"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* + add step input form with optional effort estimate */}
-                <form onSubmit={handleAddStep} className="flex items-center gap-2 pt-2 border-t border-white/[0.04]">
-                  <div className="w-[18px] h-[18px] rounded-full border-2 border-dashed border-slate-600 shrink-0 flex items-center justify-center text-[10px] text-slate-500">
-                    +
-                  </div>
-                  <input
-                    type="text"
-                    value={newStepText}
-                    onChange={e => setNewStepText(e.target.value)}
-                    placeholder="+ add step (press Enter)"
-                    className="flex-1 bg-transparent text-xs text-slate-200 placeholder:text-slate-600 outline-none focus:placeholder:text-slate-400 py-1"
-                  />
-                  <input
-                    type="number"
-                    min="0.1"
-                    step="0.5"
-                    value={newStepEffort || ''}
-                    onChange={e => setNewStepEffort(parseFloat(e.target.value) || undefined)}
-                    placeholder="Est."
-                    className="w-14 bg-white/[0.04] border border-white/[0.08] rounded-md px-1.5 py-1 text-xs text-slate-200 outline-none focus:border-amber-400 font-mono text-center"
-                    title="Estimated effort"
-                  />
-                  <select
-                    value={newStepUnit}
-                    onChange={e => setNewStepUnit(e.target.value as any)}
-                    className="bg-white/[0.04] border border-white/[0.08] rounded-md px-1.5 py-1 text-xs text-slate-300 outline-none font-mono cursor-pointer"
-                  >
-                    <option value="mins">mins</option>
-                    <option value="hours">hours</option>
-                    <option value="days">days</option>
-                  </select>
-                  <button
-                    type="submit"
-                    className="text-xs text-amber-400 hover:text-amber-300 font-mono px-2.5 py-1 rounded bg-amber-400/10 border border-amber-400/20 cursor-pointer transition-colors"
-                  >
-                    + Add
-                  </button>
-                </form>
-              </div>
-
-              {/* Sector & Status 2-Column Grid */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Sector, Status & Time Budget Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Sector */}
                 <div>
                   <label className="block text-xs font-mono text-slate-400 mb-1.5">Sector</label>
@@ -441,35 +510,31 @@ export const ItemModal: React.FC = () => {
                     <select
                       value={sectorId}
                       onChange={e => setSectorId(e.target.value)}
-                      className="w-full bg-[#121622] border border-white/[0.10] rounded-lg px-3.5 py-2 text-sm text-slate-200 outline-none focus:border-blue-500 cursor-pointer appearance-none"
+                      className="w-full bg-[#121622] border border-white/[0.10] rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-blue-500 cursor-pointer appearance-none"
                     >
                       <option value="" disabled>Select sector...</option>
                       {sectors.map(s => (
                         <option key={s.id} value={s.id}>{s.icon ? `${s.icon} ` : ''}{s.name}</option>
                       ))}
                     </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 text-xs">
                       ▼
                     </div>
                   </div>
                 </div>
                 
-                {/* Status */}
+                {/* Status Selector */}
                 <div>
                   <label className="block text-xs font-mono text-slate-400 mb-1.5">Status</label>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {(['active', 'paused', 'blocked', 'done'] as const).map(s => {
+                  <div className="grid grid-cols-5 gap-1">
+                    {(['active', 'paused', 'blocked', 'parked', 'done'] as const).map(s => {
                       const isSelected = status === s
                       return (
                         <button
                           key={s}
                           type="button"
-                          onClick={() => {
-                            setStatus(s)
-                            if (s === 'done') setProgress(100)
-                            if (s !== 'done' && progress === 100) setProgress(95)
-                          }}
-                          className={`text-[10px] font-mono uppercase tracking-wider py-2 px-1 rounded-lg border text-center transition-all cursor-pointer ${
+                          onClick={() => handleStatusSelect(s)}
+                          className={`text-[9px] font-mono uppercase tracking-wider py-2 px-1 rounded-lg border text-center transition-all cursor-pointer ${
                             isSelected ? statusStyles[s].active : statusStyles[s].inactive
                           }`}
                         >
@@ -479,55 +544,500 @@ export const ItemModal: React.FC = () => {
                     })}
                   </div>
                 </div>
+
+                {/* Time Budget */}
+                <div>
+                  <label className="block text-xs font-mono text-slate-400 mb-1.5">Planning Horizon</label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={budgetValue || ''}
+                      onChange={e => setBudgetValue(parseInt(e.target.value, 10) || undefined)}
+                      placeholder="e.g. 3"
+                      className="w-16 bg-[#121622] border border-white/[0.10] rounded-lg px-2.5 py-2 text-xs text-slate-200 outline-none text-center font-mono"
+                    />
+                    <select
+                      value={budgetUnit}
+                      onChange={e => setBudgetUnit(e.target.value as any)}
+                      className="flex-1 bg-[#121622] border border-white/[0.10] rounded-lg px-2.5 py-2 text-xs text-slate-200 outline-none font-mono"
+                    >
+                      <option value="months">months</option>
+                      <option value="quarters">quarters</option>
+                      <option value="years">years</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              {isNew && (
-                <div>
-                  <label className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={isUrgent}
-                      onChange={e => setIsUrgent(e.target.checked)}
-                      className="w-4 h-4 accent-amber-500"
+              {/* ─────────────────────────────────────────────────────────────
+                  TOP ROW: 2 BOARDS (EXPLORE FINDINGS & NEXT ACTIONS)
+                 ───────────────────────────────────────────────────────────── */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* ─── BOARD 1: 🔬 Explore Findings ─── */}
+                <div className="bg-[#0d101a] border border-purple-500/20 rounded-xl p-3.5 flex flex-col justify-between space-y-3 min-h-[320px]">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-purple-500/15">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <span>🔬</span> Explore Topics ({displayExplore.length})
+                        </span>
+                        <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">
+                          {displayExplore.filter(e => e.closed).length}/{displayExplore.length} done
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowAddExploreForm(prev => !prev)}
+                        className="text-xs font-mono text-purple-300 hover:text-purple-200 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
+                        {showAddExploreForm ? 'Cancel' : '+ New Topic'}
+                      </button>
+                    </div>
+
+                    {/* Explore List (Collapsed by Default) */}
+                    <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                      {displayExplore.map(exp => {
+                        const isExpanded = expandedExploreIds.has(exp.id)
+                        const linkedCount = getLinkedNextCount(exp.id)
+                        const canDelete = isNew || existingItem?.status === 'done' || linkedCount === 0
+                        const isSpawning = spawningExploreId === exp.id
+
+                        return (
+                          <div 
+                            key={exp.id}
+                            className={`rounded-xl border transition-all ${
+                              exp.closed 
+                                ? 'bg-white/[0.02] border-white/[0.05] opacity-60' 
+                                : 'bg-white/[0.04] border-purple-500/20 hover:border-purple-500/40 shadow-sm'
+                            }`}
+                          >
+                            {/* Collapsed Header */}
+                            <div 
+                              className="flex items-center justify-between p-2.5 cursor-pointer gap-2"
+                              onClick={() => toggleExploreExpanded(exp.id)}
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleToggleExploreClosed(exp.id)
+                                  }}
+                                  className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 transition-all ${
+                                    exp.closed 
+                                      ? 'bg-purple-500 border-purple-500 text-slate-900 font-bold' 
+                                      : 'border-purple-400/50 hover:border-purple-400 bg-[#0f141f]'
+                                  }`}
+                                  title={exp.closed ? 'Mark open' : 'Mark closed'}
+                                >
+                                  {exp.closed && '✓'}
+                                </button>
+
+                                <span className="text-slate-400 text-xs shrink-0 select-none">
+                                  {isExpanded ? '▾' : '▸'}
+                                </span>
+
+                                <span className={`text-xs font-semibold text-slate-200 truncate flex-1 ${exp.closed ? 'line-through text-slate-500' : ''}`}>
+                                  {exp.title || exp.notes.split('\n')[0] || 'Explore Finding'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                                {exp.time_estimate_value && (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/25">
+                                    ⏱ {formatEffortBadge(exp.time_estimate_value, (exp.time_estimate_unit as any) || 'hours')}
+                                  </span>
+                                )}
+
+                                {linkedCount > 0 && (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">
+                                    ⚡ {linkedCount}
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  disabled={!canDelete}
+                                  onClick={() => handleDeleteExplore(exp.id)}
+                                  className={`text-xs px-1.5 py-0.5 rounded transition-all ${
+                                    canDelete
+                                      ? 'text-slate-500 hover:text-red-400 hover:bg-white/[0.06] cursor-pointer'
+                                      : 'text-slate-700 opacity-40 cursor-not-allowed'
+                                  }`}
+                                  title={
+                                    !canDelete 
+                                      ? `Cannot delete: has ${linkedCount} linked Next item(s) while Epic is not Done` 
+                                      : 'Delete explore topic'
+                                  }
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Expanded Content View with Notes & Action Spawn */}
+                            {isExpanded && (
+                              <div className="px-3 pb-3 pt-1 border-t border-white/[0.04] space-y-2.5 bg-black/20 rounded-b-xl">
+                                <div>
+                                  <label className="block text-[10px] font-mono text-slate-400 mb-1">Topic Title</label>
+                                  <input
+                                    type="text"
+                                    value={exp.title}
+                                    onChange={async (e) => {
+                                      const val = e.target.value
+                                      if (isNew) setLocalExplore(prev => prev.map(item => item.id === exp.id ? { ...item, title: val } : item))
+                                      else await updateExploreItem(exp.id, { title: val })
+                                    }}
+                                    placeholder="Topic title..."
+                                    className="w-full bg-[#090b12] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-purple-500/50"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-mono text-slate-400 mb-1">Findings & Notes</label>
+                                  <textarea
+                                    rows={3}
+                                    value={exp.notes}
+                                    onChange={async (e) => {
+                                      const val = e.target.value
+                                      if (isNew) setLocalExplore(prev => prev.map(item => item.id === exp.id ? { ...item, notes: val } : item))
+                                      else await updateExploreItem(exp.id, { notes: val })
+                                    }}
+                                    placeholder="Rich findings, references, observations..."
+                                    className="w-full bg-[#090b12] border border-white/[0.08] rounded-lg p-2.5 text-xs text-slate-200 outline-none focus:border-purple-500/50 resize-y"
+                                  />
+                                </div>
+
+                                {/* Spawn Next Item Action Button */}
+                                <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
+                                  <span className="text-[10px] font-mono text-slate-400">Refine into execution</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSpawningExploreId(isSpawning ? null : exp.id)}
+                                    className="px-2.5 py-1 bg-gradient-to-r from-purple-500/20 to-amber-500/20 hover:from-purple-500/30 hover:to-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1"
+                                  >
+                                    <span>⚡ + Spawn Next Action</span>
+                                  </button>
+                                </div>
+
+                                {/* Inline Spawn Next Item Form */}
+                                {isSpawning && (
+                                  <div className="p-2.5 bg-[#121724] border border-amber-500/40 rounded-xl space-y-2 animate-fade-in">
+                                    <span className="text-[10px] font-mono text-amber-300 font-bold block">
+                                      New Next Action derived from "{exp.title || 'Topic'}"
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={spawnNextTitle}
+                                      onChange={e => setSpawnNextTitle(e.target.value)}
+                                      placeholder="Concrete next action step..."
+                                      className="w-full bg-black/40 border border-white/[0.10] rounded-lg px-2.5 py-1 text-xs text-slate-200 outline-none focus:border-amber-400"
+                                      autoFocus
+                                    />
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-1.5">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="any"
+                                          value={spawnNextEffort || ''}
+                                          onChange={e => setSpawnNextEffort(parseFloat(e.target.value) || undefined)}
+                                          placeholder="Est."
+                                          className="w-14 bg-black/40 border border-white/[0.08] rounded-md px-1.5 py-1 text-xs text-slate-200 outline-none font-mono text-center"
+                                        />
+                                        <select
+                                          value={spawnNextUnit}
+                                          onChange={e => setSpawnNextUnit(e.target.value as any)}
+                                          className="bg-black/40 border border-white/[0.08] rounded-md px-1.5 py-1 text-xs text-slate-300 outline-none font-mono"
+                                        >
+                                          <option value="mins">mins</option>
+                                          <option value="hours">hours</option>
+                                          <option value="days">days</option>
+                                        </select>
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSpawningExploreId(null)}
+                                          className="px-2 py-1 text-xs text-slate-400 hover:text-slate-200"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={!spawnNextTitle.trim()}
+                                          onClick={() => handleSpawnFromExplore(exp.id)}
+                                          className="px-3 py-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-900 font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                                        >
+                                          Spawn
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+
+                      {displayExplore.length === 0 && !showAddExploreForm && (
+                        <div className="text-center py-8 text-slate-500 text-xs font-mono italic">
+                          No explore topics yet. Click + New Topic to start research.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Add Explore Topic Form */}
+                  {showAddExploreForm && (
+                    <form onSubmit={handleAddExplore} className="p-3 bg-[#090b12] border border-purple-500/30 rounded-xl space-y-2">
+                      <input
+                        type="text"
+                        value={newExploreTitle}
+                        onChange={e => setNewExploreTitle(e.target.value)}
+                        placeholder="Explore topic title (e.g. Research Dublin visa)..."
+                        className="w-full bg-transparent text-xs font-semibold text-slate-200 placeholder:text-slate-500 outline-none border-b border-white/[0.06] pb-1.5"
+                        autoFocus
+                      />
+                      <textarea
+                        rows={2}
+                        value={newExploreNotes}
+                        onChange={e => setNewExploreNotes(e.target.value)}
+                        placeholder="Key findings, notes, URLs, or hypotheses..."
+                        className="w-full bg-transparent text-xs text-slate-300 placeholder:text-slate-600 outline-none resize-none"
+                      />
+                      <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={newExploreEffort || ''}
+                            onChange={e => setNewExploreEffort(parseFloat(e.target.value) || undefined)}
+                            placeholder="Est."
+                            className="w-14 bg-white/[0.04] border border-white/[0.08] rounded-md px-1.5 py-1 text-xs text-slate-200 outline-none font-mono text-center"
+                          />
+                          <select
+                            value={newExploreUnit}
+                            onChange={e => setNewExploreUnit(e.target.value as any)}
+                            className="bg-white/[0.04] border border-white/[0.08] rounded-md px-1.5 py-1 text-xs text-slate-300 outline-none font-mono"
+                          >
+                            <option value="mins">mins</option>
+                            <option value="hours">hours</option>
+                            <option value="days">days</option>
+                          </select>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={!newExploreTitle.trim() && !newExploreNotes.trim()}
+                          className="px-3 py-1 bg-purple-500 hover:bg-purple-400 disabled:opacity-50 text-slate-900 font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                        >
+                          Save Topic
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
+                {/* ─── BOARD 2: ⚡ Next Action Items ─── */}
+                <div className="bg-[#0a0d14]/90 border border-amber-500/20 rounded-xl p-3.5 flex flex-col justify-between space-y-3 min-h-[320px]">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-amber-500/15">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <span>⚡</span> Next Actions ({standardNextItems.length})
+                        </span>
+                        <span className="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                          {doneNextItems.length}/{displayNext.length} total done
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Standard Next Actions List */}
+                    <div className="space-y-1.5 max-h-[340px] overflow-y-auto pr-1">
+                      {standardNextItems.map(step => {
+                        const exploreSourceTitle = getExploreTitle(step.parent_explore_id)
+
+                        return (
+                          <div 
+                            key={step.id} 
+                            className="group flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-amber-500/30 transition-all gap-2"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleNext(step.id)}
+                                className="w-4 h-4 rounded-full border-2 border-amber-400/70 hover:border-amber-300 hover:bg-amber-400/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                                title="Mark step done"
+                              />
+
+                              <div className="min-w-0 flex-1">
+                                <input
+                                  type="text"
+                                  value={step.title}
+                                  onChange={e => handleUpdateNextTitle(step.id, e.target.value)}
+                                  className="w-full bg-transparent text-xs font-medium text-slate-100 outline-none"
+                                />
+                                {exploreSourceTitle && (
+                                  <span className="text-[9px] font-mono text-purple-300 flex items-center gap-1 truncate mt-0.5">
+                                    <span>🔬</span> from: {exploreSourceTitle}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {step.time_estimate_value && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                                  ⏱ {formatEffortBadge(step.time_estimate_value, (step.time_estimate_unit as any) || 'hours')}
+                                </span>
+                              )}
+
+                              {/* Pull to Today Button */}
+                              <button
+                                type="button"
+                                onClick={() => handlePromoteToToday(step.id)}
+                                className="px-2 py-0.5 text-[10px] font-mono font-semibold text-amber-300 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/25 rounded-md transition-colors cursor-pointer"
+                                title="Pull into Today focus"
+                              >
+                                ⭐ Today
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteNext(step.id)}
+                                className="text-slate-500 hover:text-red-400 text-xs px-1 transition-colors cursor-pointer"
+                                title="Delete step"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {standardNextItems.length === 0 && (
+                        <div className="text-center py-8 text-slate-500 text-xs font-mono italic">
+                          No pending next actions. Add below or spawn from research.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* + Add Next Action Input */}
+                  <form onSubmit={handleAddNext} className="flex items-center gap-2 pt-2 border-t border-white/[0.04]">
+                    <input
+                      type="text"
+                      value={newStepText}
+                      onChange={e => setNewStepText(e.target.value)}
+                      placeholder="+ add next action (press Enter)"
+                      className="flex-1 bg-[#121622] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 outline-none focus:border-amber-400"
                     />
-                    <span>⚡ This is urgent — put it at #1 priority in stack</span>
-                  </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={newStepEffort || ''}
+                      onChange={e => setNewStepEffort(parseFloat(e.target.value) || undefined)}
+                      placeholder="Est."
+                      className="w-14 bg-[#121622] border border-white/[0.08] rounded-lg px-1.5 py-1.5 text-xs text-slate-200 outline-none focus:border-amber-400 font-mono text-center"
+                    />
+                    <select
+                      value={newStepUnit}
+                      onChange={e => setNewStepUnit(e.target.value as any)}
+                      className="bg-[#121622] border border-white/[0.08] rounded-lg px-1.5 py-1.5 text-xs text-slate-300 outline-none font-mono cursor-pointer"
+                    >
+                      <option value="mins">mins</option>
+                      <option value="hours">hours</option>
+                      <option value="days">days</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={!newStepText.trim()}
+                      className="text-xs text-amber-400 hover:text-amber-300 font-mono px-3 py-1.5 rounded-lg bg-amber-400/15 border border-amber-400/30 disabled:opacity-40 cursor-pointer transition-colors"
+                    >
+                      + Add
+                    </button>
+                  </form>
                 </div>
-              )}
+              </div>
 
-              {overLimit && (
-                <div className="bg-red-500/10 text-red-300 p-3 rounded-xl text-xs border border-red-500/30 flex items-center gap-2">
-                  <span>⚠️</span>
-                  <span>Setting this to Active will exceed your focus limit of {settings.focus_limit}.</span>
+              {/* ─────────────────────────────────────────────────────────────
+                  BOTTOM ROW: BOARD 3 (TODAY'S FOCUS ITEMS)
+                 ───────────────────────────────────────────────────────────── */}
+              <div className="bg-[#111624] border border-amber-400/30 rounded-xl p-4 space-y-3 shadow-md">
+                <div className="flex items-center justify-between border-b border-amber-400/15 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-amber-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🎯</span> Today's Focus Items ({todayItems.length} / {settings.today_cap ?? 3})
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      High-priority actions committed for today's execution
+                    </span>
+                  </div>
                 </div>
-              )}
 
-              {/* Progress Slider */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="block text-xs font-mono text-slate-400">Progress</label>
-                  <span className="text-xs font-mono font-bold text-blue-400">{progress}%</span>
-                </div>
-                <div className="relative h-2 bg-white/[0.08] rounded-full overflow-hidden">
-                  <div 
-                    className="h-full rounded-full transition-all duration-200 bg-blue-500" 
-                    style={{ width: `${progress}%` }} 
-                  />
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="5"
-                    value={progress}
-                    onChange={e => {
-                      const val = parseInt(e.target.value, 10)
-                      setProgress(val)
-                      if (val === 100) setStatus('done')
-                      else if (status === 'done' && val < 100) setStatus('active')
-                    }}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    title={`Progress: ${progress}%`}
-                  />
+                <div className="space-y-2">
+                  {todayItems.map(step => {
+                    const exploreSourceTitle = getExploreTitle(step.parent_explore_id)
+
+                    return (
+                      <div 
+                        key={step.id}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/[0.08] border border-amber-500/25 hover:border-amber-400 transition-all gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleNext(step.id)}
+                            className="w-5 h-5 rounded-full border-2 border-amber-400 bg-amber-400/20 hover:bg-amber-400/40 text-black flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                            title="Complete today's task"
+                          />
+
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs font-bold text-slate-100 block truncate">
+                              {step.title}
+                            </span>
+                            {exploreSourceTitle && (
+                              <span className="text-[9px] font-mono text-purple-300 flex items-center gap-1 mt-0.5">
+                                <span>🔬</span> from: {exploreSourceTitle}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {step.time_estimate_value && (
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-500/30">
+                              ⏱ {formatEffortBadge(step.time_estimate_value, (step.time_estimate_unit as any) || 'hours')}
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDemoteFromToday(step.id)}
+                            className="text-[10px] font-mono text-slate-400 hover:text-slate-200 bg-white/[0.04] hover:bg-white/[0.08] px-2 py-1 rounded-md border border-white/[0.08] transition-colors cursor-pointer"
+                            title="Move back to Next action stack"
+                          >
+                            ↩ Back to Next
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {todayItems.length === 0 && (
+                    <div className="text-center py-4 text-slate-500 text-xs font-mono italic">
+                      No actions pulled into Today yet. Click [⭐ Today] on any Next Action item above.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -535,7 +1045,7 @@ export const ItemModal: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs font-mono text-slate-400 font-semibold uppercase tracking-wider">
-                    Notes & Description
+                    Epic Notes & Background
                   </label>
                   <div className="flex gap-1 bg-[#121622] p-0.5 rounded-lg border border-white/[0.08]">
                     <button
@@ -561,7 +1071,6 @@ export const ItemModal: React.FC = () => {
 
                 {notesTab === 'edit' ? (
                   <div className="space-y-1.5">
-                    {/* Rich text formatting toolbar */}
                     <div className="flex items-center gap-1 p-1 bg-[#121622] border border-white/[0.08] rounded-t-lg">
                       <button
                         type="button"
@@ -595,114 +1104,111 @@ export const ItemModal: React.FC = () => {
                       >
                         • List
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => insertFormatting('1. ')}
-                        className="px-2 py-0.5 text-xs text-slate-300 hover:bg-white/[0.08] rounded"
-                        title="Numbered list"
-                      >
-                        1. List
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => insertFormatting('- [ ] ')}
-                        className="px-2 py-0.5 text-xs text-slate-300 hover:bg-white/[0.08] rounded"
-                        title="Checklist item"
-                      >
-                        ✓ Task
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => insertFormatting('`', '`')}
-                        className="px-2 py-0.5 text-xs font-mono text-slate-300 hover:bg-white/[0.08] rounded"
-                        title="Inline code"
-                      >
-                        &lt;&gt;
-                      </button>
                     </div>
-
                     <textarea
                       ref={notesTextareaRef}
                       value={notes}
                       onChange={e => setNotes(e.target.value)}
-                      placeholder="Add detailed notes, markdown notes, context, or instructions..."
-                      className="w-full h-36 bg-[#0a0d14] border border-white/[0.08] rounded-b-lg p-3 text-sm text-slate-200 outline-none focus:border-blue-500 resize-y font-sans leading-relaxed"
-                      autoFocus
+                      placeholder="Add background, links, context..."
+                      rows={4}
+                      className="w-full bg-[#0a0d14] border border-white/[0.08] rounded-b-lg p-3 text-xs text-slate-200 outline-none focus:border-blue-500 font-mono leading-relaxed resize-y"
                     />
                   </div>
                 ) : (
-                  <div 
-                    onClick={() => setNotesTab('edit')} 
-                    className="w-full min-h-[128px] max-h-64 overflow-y-auto bg-[#0a0d14] hover:bg-[#0d121f] border border-white/[0.08] hover:border-white/[0.15] rounded-lg p-3.5 cursor-pointer transition-all group"
-                    title="Click to edit notes"
-                  >
-                    <div className="flex justify-between items-center pb-2 mb-2 border-b border-white/[0.04]">
-                      <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Formatted Markdown Preview</span>
-                      <span className="text-[10px] font-mono text-blue-400 group-hover:underline">Click to Edit ✏️</span>
-                    </div>
-                    {renderSimpleMarkdown(notes)}
+                  <div className="w-full min-h-[100px] bg-[#0a0d14] border border-white/[0.08] rounded-lg p-4 text-xs text-slate-200 leading-relaxed overflow-y-auto max-h-48">
+                    {renderSimpleMarkdown(notes || '*No notes added yet.*')}
                   </div>
                 )}
               </div>
+
+              {isNew && (
+                <div>
+                  <label className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={isUrgent}
+                      onChange={e => setIsUrgent(e.target.checked)}
+                      className="w-4 h-4 accent-amber-500"
+                    />
+                    <span>⚡ This is urgent — put it at #1 priority in stack</span>
+                  </label>
+                </div>
+              )}
             </>
           )}
 
+          {/* History Tab */}
           {activeTab === 'history' && (
-            <div className="space-y-4 relative pl-4 border-l-2 border-white/[0.08]">
-              {actionLog.map(entry => (
-                <div key={entry.id} className="relative">
-                  <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
-                  <div className="text-sm text-slate-200 mb-0.5">
-                    {formatActionLogEntry(entry, sectors)}
-                  </div>
-                  <div className="text-xs font-mono text-slate-500">
-                    {new Date(entry.changed_at).toLocaleString()}
-                  </div>
+            <div className="space-y-3">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 font-semibold mb-2">Activity History</h3>
+              {actionLog.length === 0 ? (
+                <div className="text-xs text-slate-500 italic py-6 text-center">No history logged yet.</div>
+              ) : (
+                <div className="space-y-2">
+                  {actionLog.map(entry => (
+                    <div key={entry.id} className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs flex justify-between items-start">
+                      <span className="text-slate-200">{formatActionLogEntry(entry, sectors)}</span>
+                      <span className="font-mono text-[10px] text-slate-500 shrink-0 ml-4">
+                        {new Date(entry.changed_at).toLocaleDateString()} {new Date(entry.changed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {actionLog.length === 0 && (
-                <div className="text-slate-500 text-sm italic">No history recorded yet.</div>
               )}
             </div>
           )}
 
+          {/* Effort Tab */}
           {activeTab === 'effort' && (
-            <div className="space-y-6">
-              {effortTotals && (
-                <div className="bg-[#0a0d14] p-4 rounded-xl border border-white/[0.08] flex items-center justify-between">
-                  <span className="text-xs font-mono uppercase text-slate-400 tracking-wider">Total Effort Logged</span>
-                  <span className="font-mono text-lg font-bold text-blue-400">
-                    {effortTotals.entries_hours}h {effortTotals.entries_days > 0 ? `, ${effortTotals.entries_days}d` : ''}
-                  </span>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 font-semibold">Effort Tracking</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowEffortInline(prev => !prev)}
+                  className="text-xs text-blue-400 hover:text-blue-300 font-mono"
+                >
+                  {showEffortInline ? 'Cancel' : '+ Log Effort'}
+                </button>
+              </div>
+
+              {showEffortInline && (
+                <div className="p-4 bg-white/[0.04] border border-white/[0.08] rounded-xl">
+                  <EffortPrompt
+                    itemId={selectedItemId || ''}
+                    onSave={handleEffortSave}
+                    onSkip={() => setShowEffortInline(false)}
+                  />
                 </div>
               )}
-              
-              {!showEffortInline ? (
-                <button 
-                  type="button"
-                  onClick={() => setShowEffortInline(true)}
-                  className="w-full py-2.5 border border-dashed border-white/[0.15] text-slate-300 text-xs font-mono uppercase rounded-xl hover:border-blue-500 hover:text-blue-400 transition-colors"
-                >
-                  + Log Effort Manually
-                </button>
-              ) : (
-                <EffortPrompt 
-                  itemId={selectedItemId!} 
-                  onSave={handleEffortSave} 
-                  onSkip={() => setShowEffortInline(false)} 
-                />
+
+              {effortTotals && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl">
+                    <span className="text-[10px] font-mono text-slate-400 block">Total Hours</span>
+                    <span className="text-xl font-bold text-slate-100 font-mono mt-1 block">
+                      {effortTotals.total_hours?.toFixed(1) || '0'} hrs
+                    </span>
+                  </div>
+                  <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl">
+                    <span className="text-[10px] font-mono text-slate-400 block">Total Days</span>
+                    <span className="text-xl font-bold text-slate-100 font-mono mt-1 block">
+                      {effortTotals.entries_days || '0'} days
+                    </span>
+                  </div>
+                </div>
               )}
 
-              <div className="space-y-2">
-                {effortLog.map(entry => (
-                  <div key={entry.id} className="flex justify-between items-center p-3 bg-white/[0.02] rounded-lg border border-white/[0.04]">
+              <div className="space-y-2 pt-2">
+                {effortLog.map(e => (
+                  <div key={e.id} className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs flex justify-between items-center">
                     <div>
-                      <div className="text-sm text-slate-200 font-medium">{entry.note || 'Logged effort'}</div>
-                      <div className="text-xs font-mono text-slate-500">{new Date(entry.logged_at).toLocaleString()}</div>
+                      <span className="font-mono font-bold text-amber-400 mr-2">+{e.amount} {e.unit}</span>
+                      {e.note && <span className="text-slate-300 italic">{e.note}</span>}
                     </div>
-                    <div className="font-mono text-blue-400 text-sm font-semibold">
-                      +{entry.amount} {entry.unit}
-                    </div>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      {new Date(e.logged_at).toLocaleDateString()}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -711,57 +1217,67 @@ export const ItemModal: React.FC = () => {
         </div>
 
         {/* Footer */}
-        {activeTab === 'details' && (
-          <div className="p-4 border-t border-white/[0.08] bg-white/[0.02] flex justify-between items-center">
-            {!isNew ? (
-              showDeleteConfirm ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-red-400 font-medium font-mono">Delete item?</span>
-                  <button 
+        <div className="p-4 border-t border-white/[0.08] flex justify-between items-center bg-black/40">
+          <div>
+            {!isNew && (
+              <>
+                {showDeleteConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-red-400">Delete this epic?</span>
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      className="px-2.5 py-1 text-xs bg-red-500 text-white font-semibold rounded hover:bg-red-600 transition-colors"
+                    >
+                      Yes, Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-2.5 py-1 text-xs text-slate-400 hover:text-slate-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
                     type="button"
-                    onClick={handleDelete}
-                    className="bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="text-xs text-red-400 hover:text-red-300 transition-colors"
                   >
-                    Confirm
+                    Delete Epic
                   </button>
-                  <button 
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1.5 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button 
-                  type="button"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 text-xs font-semibold px-4 py-2 rounded-lg transition-colors"
-                >
-                  Delete Task
-                </button>
-              )
-            ) : <div/>}
-            
-            <div className="flex gap-2">
-              <button 
-                type="button"
-                onClick={closeModal} 
-                className="text-slate-400 hover:text-slate-200 px-4 py-2 text-xs font-semibold transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                type="button"
-                onClick={handleSave}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-2 rounded-lg text-xs transition-colors shadow-lg"
-              >
-                Save
-              </button>
-            </div>
+                )}
+              </>
+            )}
           </div>
-        )}
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] rounded-xl transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="px-5 py-2 text-xs font-bold text-slate-900 bg-gradient-to-r from-blue-400 to-indigo-400 hover:from-blue-300 hover:to-indigo-300 rounded-xl shadow-lg transition-all"
+            >
+              {isNew ? 'Create Epic' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Active Epic Cap Swap Modal */}
+      <ParkSwapModal
+        isOpen={showParkSwapModal}
+        targetEpicTitle={title || 'This Epic'}
+        onConfirmSwap={handleConfirmParkSwap}
+        onCancel={() => setShowParkSwapModal(false)}
+      />
     </div>
   )
 }

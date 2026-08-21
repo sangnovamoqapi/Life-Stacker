@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { LifeStackAPI, ItemFilters, NewItem, NewSector, EffortUnit, NewEdge } from './types'
+import type { LifeStackAPI, ItemFilters, NewItem, NewSector, EffortUnit, NewEdge, NewExploreItem, NewNextItem, NextItemStatus } from './types'
 
 const api: LifeStackAPI = {
   items: {
@@ -9,6 +9,22 @@ const api: LifeStackAPI = {
     delete: (id: string) => ipcRenderer.invoke('items:delete', id),
     reorder: (itemId: string, newRank: number) => ipcRenderer.invoke('items:reorder', itemId, newRank),
     setUrgent: (itemId: string) => ipcRenderer.invoke('items:setUrgent', itemId)
+  },
+  exploreItems: {
+    list: (epicId?: string) => ipcRenderer.invoke('exploreItems:list', epicId),
+    create: (data: NewExploreItem) => ipcRenderer.invoke('exploreItems:create', data),
+    update: (id: string, changes: any) => ipcRenderer.invoke('exploreItems:update', id, changes),
+    toggleClosed: (id: string) => ipcRenderer.invoke('exploreItems:toggleClosed', id),
+    delete: (id: string) => ipcRenderer.invoke('exploreItems:delete', id)
+  },
+  nextItems: {
+    list: (filters?: { epic_id?: string; status?: NextItemStatus; parent_explore_id?: string }) => ipcRenderer.invoke('nextItems:list', filters),
+    create: (data: NewNextItem) => ipcRenderer.invoke('nextItems:create', data),
+    update: (id: string, changes: any) => ipcRenderer.invoke('nextItems:update', id, changes),
+    toggle: (id: string) => ipcRenderer.invoke('nextItems:toggle', id),
+    promoteToToday: (id: string) => ipcRenderer.invoke('nextItems:promoteToToday', id),
+    delete: (id: string) => ipcRenderer.invoke('nextItems:delete', id),
+    reorder: (epicId: string, itemIds: string[]) => ipcRenderer.invoke('nextItems:reorder', epicId, itemIds)
   },
   actionSteps: {
     list: (itemId: string) => ipcRenderer.invoke('actionSteps:list', itemId),
@@ -33,7 +49,8 @@ const api: LifeStackAPI = {
     retype: (edgeId: string, newRelationType: string) => ipcRenderer.invoke('edges:retype', edgeId, newRelationType)
   },
   memory: {
-    search: (queryText: string, topK?: number) => ipcRenderer.invoke('memory:search', queryText, topK)
+    search: (queryText: string, topK?: number) => ipcRenderer.invoke('memory:search', queryText, topK),
+    reindexAll: () => ipcRenderer.invoke('memory:reindexAll')
   },
   ai: {
     checkStatus: () => ipcRenderer.invoke('ai:checkStatus'),

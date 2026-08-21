@@ -1,7 +1,6 @@
 import { getDb } from './connection'
 import { v4 as uuid } from 'uuid'
 import * as ollamaClient from '../ai/ollama-client'
-import * as settingsDb from './settings'
 import type { Item, MemorySearchResult } from '../../preload/types'
 import { parseChecklist } from '../../renderer/src/utils/checklist'
 
@@ -55,27 +54,50 @@ export async function upsertChunksForItem(itemId: string): Promise<void> {
 
     if (!item) return
 
-    // 3. Extract and format searchable text
-    const steps = db.prepare(`
-      SELECT content, is_done FROM action_steps 
-      WHERE item_id = ? 
+    // 3. Extract and format searchable text from Next Items & Explore Items
+    const nextItems = db.prepare(`
+      SELECT title, status, notes FROM next_items 
+      WHERE epic_id = ? 
       ORDER BY sort_order ASC
-    `).all(itemId) as { content: string; is_done: number }[]
+    `).all(itemId) as { title: string; status: string; notes: string | null }[]
 
     let nextActionText = ''
-    if (steps.length > 0) {
-      nextActionText = steps.map(s => `${s.is_done ? '[x]' : '[ ]'} ${s.content}`).join('; ')
-    } else if (item.next_action) {
+    if (nextItems.length > 0) {
+      nextActionText = nextItems.map(s => `${s.status === 'done' ? '[x]' : '[ ]'} ${s.title}${s.notes ? ` (${s.notes})` : ''}`).join('; ')
+    } else {
+      // Fallback check on action_steps if next_items not yet populated
       try {
-        const parsed = parseChecklist(item.next_action)
-        nextActionText = parsed.map(p => p.text).join('; ')
-      } catch {
-        nextActionText = item.next_action
-      }
+        const legacySteps = db.prepare(`
+          SELECT content, is_done FROM action_steps 
+          WHERE item_id = ? 
+          ORDER BY sort_order ASC
+        `).all(itemId) as { content: string; is_done: number }[]
+        if (legacySteps.length > 0) {
+          nextActionText = legacySteps.map(s => `${s.is_done ? '[x]' : '[ ]'} ${s.content}`).join('; ')
+        } else if (item.next_action) {
+          try {
+            const parsed = parseChecklist(item.next_action)
+            nextActionText = parsed.map(p => p.text).join('; ')
+          } catch {
+            nextActionText = item.next_action
+          }
+        }
+      } catch {}
     }
+
+    const exploreRows = db.prepare(`
+      SELECT title, notes, closed FROM explore_items
+      WHERE epic_id = ?
+    `).all(itemId) as { title?: string; notes: string; closed: number }[]
+
+    const exploreNotesText = exploreRows
+      .map(e => `${e.title ? `${e.title}: ` : ''}${e.notes?.trim() || ''}`.trim())
+      .filter(Boolean)
+      .join('\n')
 
     const combinedContent = [
       `Title: ${item.title}`,
+      exploreNotesText ? `Explore Research: ${exploreNotesText}` : '',
       nextActionText ? `Next Actions: ${nextActionText}` : '',
       item.notes ? `Notes: ${item.notes}` : ''
     ].filter(Boolean).join('\n')
@@ -116,6 +138,24 @@ export async function upsertChunksForItem(itemId: string): Promise<void> {
   }
 }
 
+export async function reindexAllVectorMemory(): Promise<{ indexedEpics: number; totalChunks: number }> {
+  const db = getDb()
+  const items = db.prepare('SELECT id FROM items').all() as { id: string }[]
+  console.log(`[Memory Reindex] Re-indexing vector memory for ${items.length} epics...`)
+
+  let count = 0
+  for (const item of items) {
+    await upsertChunksForItem(item.id)
+    count++
+  }
+
+  const chunkCountRes = db.prepare('SELECT count(*) as count FROM memory_chunks').get() as { count: number }
+  console.log(`[Memory Reindex] Completed. Total memory chunks in index: ${chunkCountRes.count}`)
+  return { indexedEpics: count, totalChunks: chunkCountRes.count }
+}
+
+export const backfillEmbeddings = reindexAllVectorMemory
+
 export async function search(queryText: string, topK: number = 8): Promise<MemorySearchResult[]> {
   if (!queryText || queryText.trim().length === 0) return []
 
@@ -148,52 +188,7 @@ export async function search(queryText: string, topK: number = 8): Promise<Memor
     const rows = db.prepare(query).all(vectorData, topK) as MemorySearchResult[]
     return rows
   } catch (err: any) {
-    const errMsg = `Vector search query failed: ${err?.message || err}`
-    console.error('[Memory Search Error]', errMsg)
-    ollamaClient.setLastError(errMsg)
+    console.error('[Vector Search Error]:', err)
     return []
   }
-}
-
-export async function backfillEmbeddings(): Promise<boolean> {
-  const db = getDb()
-  const currentVersion = settingsDb.get<number>('embeddings_version') ?? 0
-  if (currentVersion >= 1) return true
-
-  console.log('[Memory Backfill] Starting one-time Nomic embeddings backfill (v1)...')
-  
-  const isReady = await ollamaClient.checkStatus()
-  if (!isReady) {
-    console.log('[Memory Backfill] Ollama not ready yet, will retry on next startup')
-    return false
-  }
-
-  const chunks = db.prepare('SELECT id, vec_rowid, content FROM memory_chunks').all() as { id: string; vec_rowid: number; content: string }[]
-  if (chunks.length === 0) {
-    settingsDb.set('embeddings_version', 1)
-    console.log('[Memory Backfill] No existing memory chunks to backfill. Set embeddings_version = 1')
-    return true
-  }
-
-  let successCount = 0
-  const updateVecStmt = db.prepare('UPDATE chunk_vectors SET embedding = ? WHERE rowid = ?')
-  
-  for (const chunk of chunks) {
-    const embedding = await ollamaClient.embed(chunk.content, 'document')
-    if (embedding && embedding.length === 768) {
-      const vectorData = new Float32Array(embedding)
-      try {
-        updateVecStmt.run(vectorData, chunk.vec_rowid)
-        successCount++
-      } catch (err) {
-        console.error(`[Memory Backfill] Failed to update vector for chunk ${chunk.id}:`, err)
-      }
-    }
-  }
-
-  console.log(`[Memory Backfill] Successfully backfilled ${successCount}/${chunks.length} memory vectors with Nomic document prefix`)
-  if (successCount > 0 || chunks.length === 0) {
-    settingsDb.set('embeddings_version', 1)
-  }
-  return true
 }
