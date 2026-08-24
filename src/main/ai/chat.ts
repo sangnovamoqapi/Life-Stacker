@@ -3,6 +3,8 @@ import { v4 as uuid } from 'uuid'
 import * as settingsDb from '../db/settings'
 import * as memoryDb from '../db/memory'
 import * as itemsDb from '../db/items'
+import * as exploreItemsDb from '../db/explore-items'
+import * as nextItemsDb from '../db/next-items'
 import * as actionStepsDb from '../db/action-steps'
 import * as ollamaClient from './ollama-client'
 import type { ChatMessage, PendingAction, Sector, Item, ItemStatus } from '../../preload/types'
@@ -68,6 +70,55 @@ export function normalizeActionSteps(
   }
 
   return result
+}
+
+export function normalizeExploreTopics(
+  rawTopics: any
+): { title: string; notes: string; time_estimate_value?: number; time_estimate_unit?: string }[] {
+  let topics: any = rawTopics
+  if (typeof topics === 'string') {
+    try {
+      topics = JSON.parse(topics)
+    } catch {
+      topics = topics.split(/\n|,|;/).map((s: string) => s.trim()).filter(Boolean)
+    }
+  }
+
+  if (!topics) return []
+  const arr = Array.isArray(topics) ? topics : [topics]
+  const results: { title: string; notes: string; time_estimate_value?: number; time_estimate_unit?: string }[] = []
+
+  for (const e of arr) {
+    if (typeof e === 'string') {
+      const clean = e.replace(/^(\d+[\.\)\-]|[-*•])\s*/, '').trim()
+      if (clean) {
+        results.push({ title: clean, notes: '' })
+      }
+    } else if (e && typeof e === 'object') {
+      let title = String(e.title || e.topic || e.name || e.content || '').replace(/^(\d+[\.\)\-]|[-*•])\s*/, '').trim()
+      let notes = String(e.notes || e.description || e.text || '').trim()
+
+      if (!title && notes) {
+        const firstLine = notes.split('\n')[0].replace(/^(\d+[\.\)\-]|[-*•])\s*/, '').trim()
+        if (firstLine.length > 70) {
+          title = firstLine.slice(0, 67).trim() + '...'
+        } else {
+          title = firstLine
+        }
+      }
+
+      if (title || notes) {
+        results.push({
+          title: title || 'Explore Topic',
+          notes: notes || '',
+          time_estimate_value: e.time_estimate_value ? Number(e.time_estimate_value) : undefined,
+          time_estimate_unit: e.time_estimate_unit ? String(e.time_estimate_unit).trim() : 'hours'
+        })
+      }
+    }
+  }
+
+  return results
 }
 
 export function extractJsonBlock(text: string): { jsonStr: string; startIndex: number; endIndex: number } | null {
@@ -166,27 +217,50 @@ const TOOLS_SCHEMA = [
     type: 'function',
     function: {
       name: 'items_create',
-      description: 'Propose creating a new item/task in the user\'s Life Stack, optionally with next action steps (checklist items). This creates a pending diff card for user confirmation.',
+      description: 'Propose creating a new Epic/project in the user\'s Life Stack, optionally with Explore research topics and Next execution actions. This creates a pending diff card for user confirmation.',
       parameters: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: 'The concise, clear title of the task (e.g. "Masters Plan in Ireland")' },
-          sector_id: { type: 'string', description: 'The exact ID or exact name of the sector this item belongs to' },
-          action_steps: {
+          title: { type: 'string', description: 'The concise, clear title of the epic/goal (e.g. "Masters Degree in Ireland")' },
+          sector_id: { type: 'string', description: 'The exact ID or exact name of the sector this epic belongs to' },
+          time_budget: {
+            type: 'object',
+            description: 'Optional planning horizon time budget (e.g. 1 month, 2 quarters, 1 year)',
+            properties: {
+              value: { type: 'number', description: 'Budget amount (e.g. 1, 3, 6)' },
+              unit: { type: 'string', enum: ['months', 'quarters', 'years'], description: 'Budget unit' }
+            }
+          },
+          explore_topics: {
             type: 'array',
-            description: 'Ordered list of next action steps (checklist subtasks). Whenever the user provides next steps or milestones, put them here instead of in notes.',
+            description: 'List of research/exploration topics, open questions, hypotheses, or things to investigate before concrete actions are known.',
             items: {
               type: 'object',
               properties: {
-                content: { type: 'string', description: 'The discrete next step description (e.g. "Talk to 6 consultancies")' },
-                effort_value: { type: 'number', description: 'Optional estimated effort number (e.g. 1, 2, 30)' },
-                effort_unit: { type: 'string', enum: ['min', 'hr', 'day', 'minutes', 'hours', 'days'], description: 'Optional effort unit' }
+                title: { type: 'string', description: 'Topic title (e.g. "Research Stamp 1G post-study visa rules")' },
+                notes: { type: 'string', description: 'Findings, notes, references, or key questions to answer' },
+                time_estimate_value: { type: 'number', description: 'Estimated research time number' },
+                time_estimate_unit: { type: 'string', enum: ['hours', 'days'], description: 'Unit (hours or days)' }
               },
-              required: ['content']
+              required: ['title']
             }
           },
-          notes: { type: 'string', description: 'Optional background context or reference information. Do NOT put actionable steps or checklists here.' },
-          status: { type: 'string', enum: ['active', 'paused', 'blocked', 'done', 'queued'], description: 'Initial status (default: queued or active)' }
+          next_items: {
+            type: 'array',
+            description: 'List of concrete, directly executable next action steps (not vague research).',
+            items: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: 'Action title (e.g. "Download transcript from portal")' },
+                time_estimate_value: { type: 'number', description: 'Estimated effort number' },
+                time_estimate_unit: { type: 'string', enum: ['mins', 'hours', 'days'], description: 'Effort unit' },
+                status: { type: 'string', enum: ['next', 'today'], description: 'Initial status ("today" for top priority actions, "next" for backlog)' }
+              },
+              required: ['title']
+            }
+          },
+          notes: { type: 'string', description: 'Optional high-level background context or summary for the Epic.' },
+          status: { type: 'string', enum: ['active', 'paused', 'blocked', 'done', 'queued', 'parked'], description: 'Initial status (default: active or queued)' }
         },
         required: ['title', 'sector_id']
       }
@@ -195,8 +269,55 @@ const TOOLS_SCHEMA = [
   {
     type: 'function',
     function: {
+      name: 'explore_create',
+      description: 'Propose adding a new Explore Research topic/card to an existing Epic. Use this whenever the user wants to research, investigate, explore questions, compare options, or capture unstructured findings.',
+      parameters: {
+        type: 'object',
+        properties: {
+          epic_id: { type: 'string', description: 'The exact ID of the parent Epic' },
+          title: { type: 'string', description: 'Topic title (e.g. "Compare Dublin vs Cork accommodation costs")' },
+          notes: { type: 'string', description: 'Detailed research findings, URLs, hypotheses, or open questions' },
+          time_estimate_value: { type: 'number', description: 'Estimated research hours' },
+          time_estimate_unit: { type: 'string', enum: ['hours', 'days'], description: 'Unit (hours or days)' }
+        },
+        required: ['epic_id', 'title']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'next_items_create',
+      description: 'Propose adding concrete Next Action steps (execution tasks) to an existing Epic, optionally linked under an Explore research topic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          epic_id: { type: 'string', description: 'The exact ID of the parent Epic' },
+          parent_explore_id: { type: 'string', description: 'Optional ID of the Explore topic card if these actions derived from that research' },
+          items: {
+            type: 'array',
+            description: 'List of concrete next action steps',
+            items: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: 'Concrete action verb phrase (e.g. "Email admissions office for fee waiver")' },
+                time_estimate_value: { type: 'number', description: 'Estimated effort number' },
+                time_estimate_unit: { type: 'string', enum: ['mins', 'hours', 'days'], description: 'Effort unit' },
+                status: { type: 'string', enum: ['next', 'today'], description: 'Status ("today" for immediate focus, "next" for backlog)' }
+              },
+              required: ['title']
+            }
+          }
+        },
+        required: ['epic_id', 'items']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'action_steps_create',
-      description: 'Propose adding new action steps (checklist items) to an existing item.',
+      description: 'Propose adding action steps to an existing item (backward compatible alias).',
       parameters: {
         type: 'object',
         properties: {
@@ -223,14 +344,21 @@ const TOOLS_SCHEMA = [
     type: 'function',
     function: {
       name: 'items_update',
-      description: 'Propose updating an existing item\'s status, progress, or notes. This creates a pending diff card for user confirmation.',
+      description: 'Propose updating an existing Epic\'s status, progress, notes, or time budget. This creates a pending diff card for user confirmation.',
       parameters: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'The exact ID of the item to update' },
-          status: { type: 'string', enum: ['active', 'paused', 'blocked', 'done', 'queued'], description: 'New status for the item' },
+          id: { type: 'string', description: 'The exact ID of the item/epic to update' },
+          status: { type: 'string', enum: ['active', 'paused', 'blocked', 'done', 'queued', 'parked'], description: 'New status' },
           progress: { type: 'number', description: 'Progress percentage (0 to 100)' },
-          notes: { type: 'string', description: 'Updated notes text' }
+          notes: { type: 'string', description: 'Updated notes text' },
+          time_budget: {
+            type: 'object',
+            properties: {
+              value: { type: 'number' },
+              unit: { type: 'string', enum: ['months', 'quarters', 'years'] }
+            }
+          }
         },
         required: ['id']
       }
@@ -240,7 +368,7 @@ const TOOLS_SCHEMA = [
     type: 'function',
     function: {
       name: 'memory_search',
-      description: 'Search the user\'s Life Stack items, notes, action steps, and memory vectors for relevant context or answers.',
+      description: 'Search the user\'s Life Stack epics, explore research topics, next actions, notes, and vector memory for relevant context or answers.',
       parameters: {
         type: 'object',
         properties: {
@@ -257,7 +385,7 @@ function getSystemPrompt(): string {
   const db = getDb()
   const sectors = db.prepare('SELECT id, name, icon, color FROM sectors ORDER BY sort_order ASC').all() as Sector[]
   const items = db.prepare('SELECT id, title, sector_id, status, progress, priority_rank, updated_at FROM items WHERE status != \'done\' ORDER BY priority_rank ASC').all() as (Item & { updated_at: string })[]
-  const focusLimit = settingsDb.get<number>('focus_limit') ?? 5
+  const focusLimit = settingsDb.get<number>('active_epic_cap') ?? settingsDb.get<number>('focus_limit') ?? 5
 
   const sectorCounts: Record<string, number> = {}
   sectors.forEach(s => { sectorCounts[s.id] = 0 })
@@ -267,38 +395,58 @@ function getSystemPrompt(): string {
     }
   })
 
-  const sectorSummary = sectors.map(s => `- Sector "${s.name}" (ID: ${s.id}, Icon: ${s.icon || '📁'}, Items: ${sectorCounts[s.id] || 0})`).join('\n')
+  const sectorSummary = sectors.map(s => `- Sector "${s.name}" (ID: ${s.id}, Icon: ${s.icon || '📁'}, Epics: ${sectorCounts[s.id] || 0})`).join('\n')
   const topActiveItems = items.filter(i => i.status === 'active').slice(0, 8).map(i => {
     const s = sectors.find(sec => sec.id === i.sector_id)
     return `  #${i.priority_rank} [${s ? s.name : 'Unknown'}] ${i.title} (${i.progress}%, status: ${i.status}) [ID: ${i.id}]`
   }).join('\n')
 
-  return `You are LifeStack Assistant, a concise, active-voice productivity assistant embedded in LifeStack.
-You help the user manage their unified life stack and tasks following Simplified Technical English (ASD-STE100): clear, concise, direct.
+  return `You are LifeStack Assistant, an intelligent, active-voice productivity co-pilot embedded in LifeStack.
+You help the user organize and advance their life goals across the 4-Tier LifeStack Framework:
 
+═══════════════════════════════════════════════════════════════════════════════
+THE 4-TIER LIFESTACK WORKFLOW:
+═══════════════════════════════════════════════════════════════════════════════
+1. SECTORS: Broad life domains (Career, Health, Learning, Side Projects, Relationships, Home & Admin).
+2. ACTIVE EPICS: Major in-flight goals/initiatives (Max ${focusLimit} concurrently active) with planning horizons.
+3. EXPLORE TOPICS 🔬 (Research & Discovery):
+   - Unstructured findings, research notes, questions, hypotheses, URLs, comparisons, or open inquiries.
+   - Example: "Research Stamp 1G post-study visa options", "Compare Dublin vs Cork tech market", "Evaluate LLM embedding latency".
+   - Use Explore when things need investigation before concrete actions can be known.
+4. NEXT ACTIONS ⚡ (Crisp Execution Steps) & TODAY FOCUS 🎯:
+   - Concrete, non-vague executable steps (verb + noun).
+   - Example: "Download visa checklist PDF", "Email professor regarding syllabus", "Schedule 30m mock interview".
+   - Up to 3 high-priority actions can be pulled into the daily Today focus (status: "today").
+
+═══════════════════════════════════════════════════════════════════════════════
 CURRENT STACK STATE:
-Focus Limit: ${focusLimit}
+═══════════════════════════════════════════════════════════════════════════════
+Active Epic Cap: ${focusLimit}
 Available Sectors:
 ${sectorSummary}
 
-Top Active Items:
-${topActiveItems || '  (No active items)'}
+Top Active Epics:
+${topActiveItems || '  (No active epics)'}
 
-GUIDELINES:
-1. When creating a task:
-   - Call the tool \`items_create\`.
-   - ALWAYS provide a concise, descriptive 'title' (e.g. "Masters Plan in Ireland"). Never leave 'title' empty.
-   - Select the most appropriate sector_id from the Available Sectors list (e.g. for masters/degrees/study choose Learning; for work choose Career; for health choose Health).
-   - If the user lists steps/subtasks/milestones (e.g. "with next steps as..."), place each discrete step into the \`action_steps\` array: \`[{ content: "Talking to 6 consultancies" }, { content: "Listing valid unis" }, ...]\`.
-   - NEVER place next steps or checklist items into 'notes'.
-2. When the user asks to add next steps to an existing task:
-   - Call the tool \`action_steps_create\` with \`item_id\` and \`steps\` array.
-3. When the user asks to update an item (e.g. mark done, set progress, change status, update notes):
-   - Call the tool \`items_update\` with the exact item ID.
-4. When the user asks a question about their tasks, what they need to do, or what is stale/due:
-   - Call \`memory_search\` to inspect real tasks and context before answering.
-5. Keep conversational messages concise, clear, and direct.
-6. All item and step creations create pending action diff cards that require the user's explicit confirmation.
+═══════════════════════════════════════════════════════════════════════════════
+BEHAVIOR & TOOL GUIDELINES:
+═══════════════════════════════════════════════════════════════════════════════
+1. CREATING A NEW GOAL / EPIC:
+   - Call \`items_create\`.
+   - Provide a descriptive 'title' (e.g. "MS in Ireland Application & Study") and appropriate 'sector_id'.
+   - Set an appropriate 'time_budget' (e.g. \`{ value: 1, unit: "years" }\` or \`{ value: 6, unit: "months" }\`).
+   - ALWAYS include 1 to 3 \`explore_topics\` for unknown research, comparisons, or questions (e.g. \`[{"title": "Research Stamp 1G post-study work visa requirements", "notes": "Check criteria, duration, and eligible tech roles"}, {"title": "Compare Trinity College vs UCD MSc in Computer Science", "notes": "Fees, course modules, and admission deadlines"}]\`).
+   - ALWAYS include 1 to 3 \`next_items\` for immediate execution steps (e.g. \`[{"title": "Download transcript from university portal", "time_estimate_value": 1, "time_estimate_unit": "hours", "status": "today"}, {"title": "Draft statement of purpose outline", "time_estimate_value": 2, "time_estimate_unit": "hours", "status": "next"}]\`).
+   - NEVER create empty Epics without Explore research or Next actions attached!
+2. ADDING RESEARCH / EXPLORATION TOPICS:
+   - Call \`explore_create\` with \`epic_id\`, \`title\` (concise research question/topic), and \`notes\` (findings, questions, references).
+   - Use this whenever the user shares findings, asks to research something, or wants to explore options.
+3. ADDING CONCRETE NEXT ACTIONS:
+   - Call \`next_items_create\` with \`epic_id\` and list of \`items\` with concise action titles and estimated effort.
+4. UPDATING EPICS OR CHECKING STATE:
+   - Call \`items_update\` to change status, progress, notes, or time budget.
+   - Call \`memory_search\` to inspect tasks, explore notes, and context before answering.
+5. All item creations create pending action diff cards that require user confirmation.
 `
 }
 
@@ -347,16 +495,89 @@ export async function acceptAction(actionId: string, overrides?: Record<string, 
         title: finalArgs.title.trim(),
         sector_id: finalArgs.sector_id,
         notes: finalArgs.notes || '',
-        status: finalArgs.status || 'queued'
+        status: finalArgs.status || 'queued',
+        time_budget: finalArgs.time_budget ? JSON.stringify(finalArgs.time_budget) : undefined
       })
 
-      // Normalize and create action steps
-      const stepsToCreate = normalizeActionSteps(finalArgs.action_steps || finalArgs.steps)
-      for (const step of stepsToCreate) {
-        actionStepsDb.createStep(newItem.id, step.content, {
-          effort_value: step.effort_value,
-          effort_unit: step.effort_unit
+      // 1. Create Explore topics if proposed
+      const exploreToCreate = normalizeExploreTopics(finalArgs.explore_topics)
+      for (const exp of exploreToCreate) {
+        exploreItemsDb.createExploreItem({
+          epic_id: newItem.id,
+          title: exp.title,
+          notes: exp.notes,
+          time_estimate_value: exp.time_estimate_value,
+          time_estimate_unit: exp.time_estimate_unit
         })
+      }
+
+      // 2. Create Next actions if proposed
+      if (Array.isArray(finalArgs.next_items) && finalArgs.next_items.length > 0) {
+        for (const n of finalArgs.next_items) {
+          const itemTitle = typeof n === 'string' ? n : (n.title || n.content || '')
+          if (itemTitle && itemTitle.trim()) {
+            nextItemsDb.createNextItem({
+              epic_id: newItem.id,
+              title: itemTitle.trim(),
+              time_estimate_value: n.time_estimate_value ? Number(n.time_estimate_value) : undefined,
+              time_estimate_unit: n.time_estimate_unit || 'hours',
+              status: n.status === 'today' ? 'today' : 'next'
+            })
+          }
+        }
+      }
+
+      // 3. Fallback: create legacy action_steps / steps if passed
+      const stepsToCreate = normalizeActionSteps(finalArgs.action_steps || finalArgs.steps)
+      if (stepsToCreate.length > 0 && (!finalArgs.next_items || finalArgs.next_items.length === 0)) {
+        for (const step of stepsToCreate) {
+          nextItemsDb.createNextItem({
+            epic_id: newItem.id,
+            title: step.content,
+            time_estimate_value: step.effort_value,
+            time_estimate_unit: step.effort_unit || 'hours',
+            status: 'next'
+          })
+        }
+      }
+    } else if (action.tool_name === 'explore_create' || action.tool_name === 'explore:create' || action.tool_name === 'explore_items_create') {
+      if (!finalArgs.epic_id) {
+        return { success: false, error: 'Missing epic_id' }
+      }
+      const expItems = normalizeExploreTopics(finalArgs.explore_topics || finalArgs)
+      if (expItems.length === 0) {
+        return { success: false, error: 'Missing explore topic content' }
+      }
+      for (const exp of expItems) {
+        exploreItemsDb.createExploreItem({
+          epic_id: finalArgs.epic_id,
+          title: exp.title,
+          notes: exp.notes,
+          time_estimate_value: exp.time_estimate_value,
+          time_estimate_unit: exp.time_estimate_unit
+        })
+      }
+    } else if (action.tool_name === 'next_items_create' || action.tool_name === 'next_items:create') {
+      if (!finalArgs.epic_id) {
+        return { success: false, error: 'Missing epic_id' }
+      }
+      const rawItems = finalArgs.items || finalArgs.next_items || []
+      const itemsList = Array.isArray(rawItems) ? rawItems : []
+      if (itemsList.length === 0) {
+        return { success: false, error: 'No next items provided' }
+      }
+      for (const item of itemsList) {
+        const itemTitle = typeof item === 'string' ? item : item.title
+        if (itemTitle && itemTitle.trim()) {
+          nextItemsDb.createNextItem({
+            epic_id: finalArgs.epic_id,
+            parent_explore_id: finalArgs.parent_explore_id || null,
+            title: itemTitle.trim(),
+            time_estimate_value: item.time_estimate_value ? Number(item.time_estimate_value) : undefined,
+            time_estimate_unit: item.time_estimate_unit || 'hours',
+            status: item.status === 'today' ? 'today' : 'next'
+          })
+        }
       }
     } else if (action.tool_name === 'action_steps_create' || action.tool_name === 'action_steps:create') {
       if (!finalArgs.item_id) {
@@ -364,9 +585,12 @@ export async function acceptAction(actionId: string, overrides?: Record<string, 
       }
       const stepsToCreate = normalizeActionSteps(finalArgs.steps || finalArgs.action_steps)
       for (const step of stepsToCreate) {
-        actionStepsDb.createStep(finalArgs.item_id, step.content, {
-          effort_value: step.effort_value,
-          effort_unit: step.effort_unit
+        nextItemsDb.createNextItem({
+          epic_id: finalArgs.item_id,
+          title: step.content,
+          time_estimate_value: step.effort_value,
+          time_estimate_unit: step.effort_unit || 'hours',
+          status: 'next'
         })
       }
     } else if (action.tool_name === 'items_update' || action.tool_name === 'items:update') {
@@ -379,6 +603,7 @@ export async function acceptAction(actionId: string, overrides?: Record<string, 
       if (finalArgs.notes !== undefined) changes.notes = finalArgs.notes
       if (finalArgs.title !== undefined) changes.title = finalArgs.title
       if (finalArgs.sector_id !== undefined) changes.sector_id = finalArgs.sector_id
+      if (finalArgs.time_budget !== undefined) changes.time_budget = JSON.stringify(finalArgs.time_budget)
 
       itemsDb.updateItem(finalArgs.id, changes)
     }

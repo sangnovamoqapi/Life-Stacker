@@ -93,7 +93,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('memory:reindexAll', () => memoryDb.reindexAllVectorMemory())
   ipcMain.handle('ai:checkStatus', () => ollamaClient.checkStatus())
   ipcMain.handle('ai:getLastError', () => ollamaClient.getLastError())
-  ipcMain.handle('ai:generateNextFromExplore', (_, title: string, notes: string) => ollamaClient.generateDraftNextItems(title, notes))
+  ipcMain.handle('ai:listModels', () => ollamaClient.listModels())
+  ipcMain.handle('ai:generateNextFromExplore', (_, title: string, notes: string) => {
+    const preferredModel = settingsDb.get<string>('chat_model') || undefined
+    return ollamaClient.generateDraftNextItems(title, notes, preferredModel)
+  })
 
   // Conversational AI & Pending Actions IPC
   ipcMain.handle('chat:send', (_, message: string) => chatEngine.sendMessage(message))

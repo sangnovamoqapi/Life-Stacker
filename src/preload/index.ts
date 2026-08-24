@@ -57,6 +57,7 @@ const api: LifeStackAPI = {
   ai: {
     checkStatus: () => ipcRenderer.invoke('ai:checkStatus'),
     getLastError: () => ipcRenderer.invoke('ai:getLastError'),
+    listModels: () => ipcRenderer.invoke('ai:listModels'),
     generateNextFromExplore: (title: string, notes: string) => ipcRenderer.invoke('ai:generateNextFromExplore', title, notes)
   },
   chat: {

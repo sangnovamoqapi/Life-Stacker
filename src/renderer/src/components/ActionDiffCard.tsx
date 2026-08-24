@@ -13,6 +13,13 @@ interface StepDraft {
   effort_unit?: string | null
 }
 
+interface ExploreDraft {
+  title: string
+  notes?: string
+  time_estimate_value?: number | null
+  time_estimate_unit?: string | null
+}
+
 export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolved }) => {
   const { sectors, items, refreshAll, showToast } = useAppContext()
   
@@ -27,10 +34,37 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Initial step extraction
-  const rawInitialSteps = parsedArgs.action_steps || parsedArgs.steps || []
+  // Initial step & explore extraction
+  const rawInitialSteps = parsedArgs.next_items || parsedArgs.items || parsedArgs.action_steps || parsedArgs.steps || []
   const initialSteps: StepDraft[] = Array.isArray(rawInitialSteps)
-    ? rawInitialSteps.map((s: any) => typeof s === 'string' ? { content: s } : { content: s.content, effort_value: s.effort_value, effort_unit: s.effort_unit })
+    ? rawInitialSteps.map((s: any) => typeof s === 'string' ? { content: s } : { content: s.title || s.content, effort_value: s.time_estimate_value ?? s.effort_value, effort_unit: s.time_estimate_unit ?? s.effort_unit })
+    : []
+
+  const rawExploreTopics = parsedArgs.explore_topics || []
+  const initialExploreTopics: ExploreDraft[] = Array.isArray(rawExploreTopics)
+    ? rawExploreTopics.map((e: any) => {
+        if (typeof e === 'string') {
+          const clean = e.replace(/^(\d+[\.\)\-]|[-*•])\s*/, '').trim()
+          return clean ? { title: clean, notes: '' } : null
+        }
+        if (e && typeof e === 'object') {
+          let title = String(e.title || e.topic || e.name || e.content || '').replace(/^(\d+[\.\)\-]|[-*•])\s*/, '').trim()
+          let notes = String(e.notes || e.description || e.text || '').trim()
+          if (!title && notes) {
+            const firstLine = notes.split('\n')[0].replace(/^(\d+[\.\)\-]|[-*•])\s*/, '').trim()
+            title = firstLine.length > 70 ? firstLine.slice(0, 67).trim() + '...' : firstLine
+          }
+          if (title || notes) {
+            return {
+              title: title || 'Explore Topic',
+              notes: notes || '',
+              time_estimate_value: e.time_estimate_value ? Number(e.time_estimate_value) : undefined,
+              time_estimate_unit: e.time_estimate_unit || 'hours'
+            }
+          }
+        }
+        return null
+      }).filter(Boolean) as ExploreDraft[]
     : []
 
   // Editable fields
@@ -41,13 +75,17 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
   const [notes, setNotes] = useState<string>(parsedArgs.notes || '')
   const [actionSteps, setActionSteps] = useState<StepDraft[]>(initialSteps)
   const [newStepContent, setNewStepContent] = useState('')
+  const [exploreTopics, setExploreTopics] = useState<ExploreDraft[]>(initialExploreTopics)
+  const [newExploreTitle, setNewExploreTitle] = useState('')
+  const [newExploreNotes, setNewExploreNotes] = useState('')
 
   const isCreate = action.tool_name === 'items:create' || action.tool_name === 'items_create'
   const isUpdate = action.tool_name === 'items:update' || action.tool_name === 'items_update'
-  const isAddSteps = action.tool_name === 'action_steps:create' || action.tool_name === 'action_steps_create'
+  const isAddSteps = action.tool_name === 'action_steps:create' || action.tool_name === 'action_steps_create' || action.tool_name === 'next_items_create' || action.tool_name === 'next_items:create'
+  const isExploreCreate = action.tool_name === 'explore_create' || action.tool_name === 'explore:create' || action.tool_name === 'explore_items_create'
 
-  // Look up target item if update or addSteps
-  const targetItemId = isUpdate ? parsedArgs.id : (isAddSteps ? parsedArgs.item_id : null)
+  // Look up target item if update or addSteps or explore
+  const targetItemId = isUpdate ? parsedArgs.id : (isAddSteps || isExploreCreate ? (parsedArgs.epic_id || parsedArgs.item_id) : null)
   const targetItem = targetItemId ? items.find(i => i.id === targetItemId) : null
   const targetSector = sectors.find(s => s.id === (isEditing ? sectorId : (parsedArgs.sector_id || targetItem?.sector_id)))
 
@@ -64,6 +102,18 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
   const handleUpdateStepContent = (index: number, val: string) => {
     setActionSteps(prev => prev.map((s, i) => i === index ? { ...s, content: val } : s))
+  }
+
+  const handleAddExplore = () => {
+    const trimmedTitle = newExploreTitle.trim()
+    if (!trimmedTitle) return
+    setExploreTopics(prev => [...prev, { title: trimmedTitle, notes: newExploreNotes.trim() }])
+    setNewExploreTitle('')
+    setNewExploreNotes('')
+  }
+
+  const handleRemoveExplore = (index: number) => {
+    setExploreTopics(prev => prev.filter((_, i) => i !== index))
   }
 
   const handleAccept = async (e?: React.MouseEvent) => {
@@ -83,8 +133,30 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
         overrides.sector_id = sectorId
         overrides.status = status
         overrides.notes = notes
-        overrides.action_steps = actionSteps.filter(s => s.content.trim())
+        if (exploreTopics.length > 0) {
+          overrides.explore_topics = exploreTopics.map(e => ({
+            title: e.title.trim() || e.notes?.slice(0, 60) || 'Explore Topic',
+            notes: e.notes || '',
+            time_estimate_value: e.time_estimate_value,
+            time_estimate_unit: e.time_estimate_unit
+          }))
+        }
+        if (actionSteps.length > 0) {
+          overrides.next_items = actionSteps.filter(s => s.content.trim()).map(s => ({
+            title: s.content.trim(),
+            time_estimate_value: s.effort_value,
+            time_estimate_unit: s.effort_unit
+          }))
+        }
+      } else if (isExploreCreate) {
+        if (title.trim()) overrides.title = title.trim()
+        if (notes !== undefined) overrides.notes = notes
       } else if (isAddSteps) {
+        overrides.items = actionSteps.filter(s => s.content.trim()).map(s => ({
+          title: s.content.trim(),
+          time_estimate_value: s.effort_value,
+          time_estimate_unit: s.effort_unit
+        }))
         overrides.steps = actionSteps.filter(s => s.content.trim())
       } else if (isUpdate) {
         if (title.trim() && title !== targetItem?.title) overrides.title = title.trim()
@@ -96,7 +168,16 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
       const res = await window.api.chat.acceptAction(action.id, overrides)
       if (res.success) {
-        showToast(isCreate ? `Created item "${title || parsedArgs.title}"` : isAddSteps ? 'Added action steps' : 'Updated item', 'success')
+        showToast(
+          isCreate 
+            ? `Created Epic "${title || parsedArgs.title}"` 
+            : isExploreCreate
+              ? `Created Explore topic "${title || parsedArgs.title}"`
+              : isAddSteps 
+                ? 'Added Next actions' 
+                : 'Updated Epic', 
+          'success'
+        )
         await refreshAll()
         if (onResolved) onResolved()
       } else {
@@ -140,11 +221,13 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
           <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider ${
             isCreate 
               ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30' 
-              : isAddSteps
-                ? 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
-                : 'bg-blue-400/20 text-blue-300 border border-blue-400/30'
+              : isExploreCreate
+                ? 'bg-purple-400/20 text-purple-300 border border-purple-400/30'
+                : isAddSteps
+                  ? 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
+                  : 'bg-blue-400/20 text-blue-300 border border-blue-400/30'
           }`}>
-            {isCreate ? '+ Create Item' : isAddSteps ? '+ Add Next Steps' : '✎ Update Item'}
+            {isCreate ? '+ Create Epic' : isExploreCreate ? '🔬 + Explore Topic' : isAddSteps ? '⚡ + Add Next Actions' : '✎ Update Epic'}
           </span>
           {targetSector && (
             <span 
@@ -175,13 +258,19 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
         <div className="space-y-2 pl-1">
           {isCreate && (
             <div>
-              <span className="text-slate-400 font-medium">Title: </span>
+              <span className="text-slate-400 font-medium">Epic Title: </span>
               <span className="font-bold text-slate-100">{parsedArgs.title}</span>
             </div>
           )}
-          {(isUpdate || isAddSteps) && targetItem && (
+          {isExploreCreate && (
             <div>
-              <span className="text-slate-400 font-medium">Target: </span>
+              <span className="text-slate-400 font-medium">Research Topic: </span>
+              <span className="font-bold text-purple-200">{parsedArgs.title}</span>
+            </div>
+          )}
+          {(isUpdate || isAddSteps || isExploreCreate) && targetItem && (
+            <div>
+              <span className="text-slate-400 font-medium">Parent Epic: </span>
               <span className="font-bold text-slate-100">{targetItem.title}</span>
             </div>
           )}
@@ -201,15 +290,34 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
           )}
           {parsedArgs.notes && (
             <div>
-              <span className="text-slate-400 font-medium">Notes: </span>
+              <span className="text-slate-400 font-medium">{isExploreCreate ? 'Findings / Notes: ' : 'Notes: '}</span>
               <span className="text-slate-300 italic">{parsedArgs.notes}</span>
+            </div>
+          )}
+
+          {/* Explore Topics List View */}
+          {exploreTopics.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <span className="text-purple-300 font-medium flex items-center gap-1 font-mono text-[11px]">
+                <span>🔬</span> Explore Topics ({exploreTopics.length}):
+              </span>
+              <div className="space-y-1.5 pl-2.5 border-l-2 border-purple-500/40">
+                {exploreTopics.map((exp, idx) => (
+                  <div key={idx} className="text-slate-200 bg-purple-950/20 p-2 rounded border border-purple-500/20">
+                    <span className="font-semibold text-purple-200">{exp.title}</span>
+                    {exp.notes && <p className="text-[11px] text-slate-300 italic mt-0.5">{exp.notes}</p>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Action Steps Checklist View */}
           {actionSteps.length > 0 && (
             <div className="space-y-1.5 pt-1">
-              <span className="text-slate-400 font-medium block">Action Steps ({actionSteps.length}):</span>
+              <span className="text-amber-300 font-medium flex items-center gap-1 font-mono text-[11px]">
+                <span>⚡</span> Next Actions ({actionSteps.length}):
+              </span>
               <div className="space-y-1 pl-2.5 border-l-2 border-amber-400/40">
                 {actionSteps.map((step, idx) => (
                   <div key={idx} className="flex items-baseline gap-2 text-slate-200">
@@ -225,18 +333,47 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
               </div>
             </div>
           )}
+
+          {isCreate && exploreTopics.length === 0 && actionSteps.length === 0 && (
+            <div className="text-[11px] text-slate-400 italic bg-white/[0.03] p-2 rounded border border-dashed border-white/[0.08]">
+              No Explore topics or Next actions attached yet. Click <strong className="text-slate-200">Edit ✎</strong> below to add research questions or action steps!
+            </div>
+          )}
         </div>
       ) : (
         /* Edit Mode */
         <div className="space-y-2.5 pt-1 border-t border-white/[0.08]">
+          {isExploreCreate && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-[10px] uppercase font-mono text-purple-300 mb-0.5">Explore Topic Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2.5 py-1 text-slate-100 text-xs outline-none focus:border-purple-400/50"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase font-mono text-purple-300 mb-0.5">Findings / Research Notes</label>
+                <textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  rows={3}
+                  className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2.5 py-1 text-slate-100 text-xs outline-none focus:border-purple-400/50 resize-none"
+                />
+              </div>
+            </div>
+          )}
+
           {isCreate && (
             <div>
-              <label className="block text-[10px] uppercase font-mono text-slate-400 mb-0.5">Title</label>
+              <label className="block text-[10px] uppercase font-mono text-slate-400 mb-0.5">Epic Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2.5 py-1 text-slate-100 text-xs outline-none focus:border-amber-400/50"
+                className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2.5 py-1 text-slate-100 text-xs outline-none focus:border-amber-400/50 font-semibold"
               />
             </div>
           )}
@@ -286,10 +423,70 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
             </div>
           )}
 
+          {/* Explore Topics Editor */}
+          {isCreate && (
+            <div className="space-y-2 p-2.5 rounded-lg bg-purple-950/20 border border-purple-500/20">
+              <label className="block text-[10px] uppercase font-mono text-purple-300 font-bold flex items-center gap-1">
+                <span>🔬</span> Explore Topics (Research & Discovery)
+              </label>
+              
+              {exploreTopics.length > 0 && (
+                <div className="space-y-1.5">
+                  {exploreTopics.map((exp, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2 rounded bg-black/40 border border-purple-500/20 text-xs">
+                      <div>
+                        <span className="font-semibold text-purple-200">{exp.title}</span>
+                        {exp.notes && <p className="text-[11px] text-slate-400 italic mt-0.5">{exp.notes}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveExplore(idx)}
+                        className="text-slate-400 hover:text-red-400 px-1 text-xs cursor-pointer"
+                        title="Remove explore topic"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add Explore Topic Form */}
+              <div className="space-y-1.5 pt-1">
+                <input
+                  type="text"
+                  value={newExploreTitle}
+                  onChange={e => setNewExploreTitle(e.target.value)}
+                  placeholder="Explore topic title (e.g. Research visa options)..."
+                  className="w-full bg-slate-950/70 border border-purple-500/20 rounded px-2.5 py-1 text-xs text-purple-100 placeholder-purple-400/40 outline-none focus:border-purple-400/60 font-mono"
+                />
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={newExploreNotes}
+                    onChange={e => setNewExploreNotes(e.target.value)}
+                    placeholder="Findings / questions (optional)..."
+                    className="flex-1 bg-slate-950/70 border border-purple-500/20 rounded px-2.5 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-purple-400/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddExplore}
+                    disabled={!newExploreTitle.trim()}
+                    className="px-2.5 py-1 rounded bg-purple-600/60 hover:bg-purple-600 text-purple-100 font-semibold text-xs disabled:opacity-30 transition-colors cursor-pointer"
+                  >
+                    + Add Explore
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Action Steps Editor */}
           {(isCreate || isAddSteps) && (
-            <div className="space-y-1.5">
-              <label className="block text-[10px] uppercase font-mono text-slate-400">Action Steps</label>
+            <div className="space-y-2 p-2.5 rounded-lg bg-amber-950/15 border border-amber-500/20">
+              <label className="block text-[10px] uppercase font-mono text-amber-300 font-bold flex items-center gap-1">
+                <span>⚡</span> Next Actions (Execution Steps)
+              </label>
               <div className="space-y-1.5">
                 {actionSteps.map((step, idx) => (
                   <div key={idx} className="flex items-center gap-1.5">
@@ -303,7 +500,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
                     <button
                       type="button"
                       onClick={() => handleRemoveStep(idx)}
-                      className="text-slate-400 hover:text-red-400 px-1 text-xs"
+                      className="text-slate-400 hover:text-red-400 px-1 text-xs cursor-pointer"
                       title="Remove step"
                     >
                       ✕
@@ -318,14 +515,14 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
                     value={newStepContent}
                     onChange={e => setNewStepContent(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddStep() } }}
-                    placeholder="Add step and press Enter..."
+                    placeholder="Add action step and press Enter..."
                     className="flex-1 bg-slate-950/40 border border-white/[0.08] rounded px-2 py-0.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-amber-400/50"
                   />
                   <button
                     type="button"
                     onClick={handleAddStep}
                     disabled={!newStepContent.trim()}
-                    className="px-2 py-0.5 rounded bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-30 text-slate-300 text-xs font-mono"
+                    className="px-2 py-0.5 rounded bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-30 text-slate-300 text-xs font-mono cursor-pointer"
                   >
                     + Add
                   </button>

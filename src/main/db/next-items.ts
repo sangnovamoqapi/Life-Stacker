@@ -211,6 +211,14 @@ export function updateNextItem(
       values.push(now)
     } else {
       sets.push('completed_at = NULL')
+      
+      // If reopening a task on a completed Epic, revert parent Epic back to 'active'
+      if (existing.status === 'done') {
+        const parentEpic = db.prepare('SELECT status FROM items WHERE id = ?').get(existing.epic_id) as { status: string } | undefined
+        if (parentEpic && parentEpic.status === 'done') {
+          db.prepare("UPDATE items SET status = 'active', updated_at = ? WHERE id = ?").run(now, existing.epic_id)
+        }
+      }
     }
   }
   if (changes.time_estimate_value !== undefined) {

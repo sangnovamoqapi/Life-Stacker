@@ -155,7 +155,8 @@ export async function embed(
 
 export async function generateDraftNextItems(
   exploreTitle: string,
-  exploreNotes: string
+  exploreNotes: string,
+  preferredModel?: string
 ): Promise<{ title: string; time_estimate_value?: number; time_estimate_unit?: string }[]> {
   const isOnline = await checkStatus()
   const fallbackRows: { title: string; time_estimate_value?: number; time_estimate_unit?: string }[] = []
@@ -178,7 +179,7 @@ export async function generateDraftNextItems(
   }
 
   try {
-    const model = await getBestChatModel()
+    const model = await getBestChatModel(preferredModel)
     const prompt = `You are a high-performance productivity assistant in LifeStack. 
 Convert the following research findings into 2 to 4 concrete, actionable next steps.
 Topic: "${exploreTitle}"
