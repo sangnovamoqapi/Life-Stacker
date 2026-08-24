@@ -231,3 +231,18 @@ This document tracks all foundational architecture, design, and engineering deci
      - Upgraded `ActionDiffCard.tsx` with dedicated purple `🔬 Explore Topics` and amber `⚡ Next Actions` editors and previews.
 - **Rationale**: Gives users complete flexibility to run any local open-source LLM while ensuring the AI understands the distinction between open-ended research and concrete execution steps.
 
+---
+
+## ADR 021: Interactive UI Walkthrough & Deferred Screen Roadmap (Lanes & Stats Revamps)
+- **Date**: 2026-08-24
+- **Decision**:
+  1. **Feature-Flagged Interactive Guided Tour (`InteractiveTour.tsx`)**:
+     - Added `feature_interactive_tour` setting to gate onboarding tour behavior.
+     - Implemented dynamic spotlight engine with SVG mask cutout (crystal-clear unblurred focus window over target elements with a glowing pulsating ring).
+     - Card dynamically tracks element coordinates via `getBoundingClientRect()` and glides smoothly across transitions.
+  2. **Deferred Tour Coverage for Lanes & Stats Screens**:
+     - **Lanes Screen**: Detailed walkthrough deferred pending planned visual re-visualization and structural hierarchy enhancements of Sector lanes.
+     - **Stats Screen**: Walkthrough step deferred pending planned analytics revamp (velocity trends, horizon burn charts, and time distribution metrics).
+     - **Roadmap Anchor**: Once the Lanes and Stats view revamps are implemented, corresponding interactive tour stops will be integrated into `TOUR_STEPS`.
+- **Rationale**: Keeps the current onboarding tour focused on stabilized 2×2 tactical grid, explore-to-next synthesis, and local AI diff card workflows, avoiding premature onboarding design for views undergoing near-term visualization overhauls.
+
