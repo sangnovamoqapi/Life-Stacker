@@ -480,7 +480,7 @@ export const OverviewView: React.FC = () => {
         {/* ═══════════════════════════════════════════════════════════════════
             4. BOTTOM-RIGHT: TODAY PANEL (Governed by today_cap)
            ═══════════════════════════════════════════════════════════════════ */}
-        <div className={`lane-glass rounded-2xl p-4 flex flex-col border border-amber-400/30 shadow-lg bg-amber-950/[0.08] transition-all ${
+        <div data-tour="today-panel" className={`lane-glass rounded-2xl p-4 flex flex-col border border-amber-400/30 shadow-lg bg-amber-950/[0.08] transition-all ${
           collapsedPanels.today ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
         }`}>
           <div className="flex items-center justify-between pb-3 border-b border-amber-400/20 shrink-0">

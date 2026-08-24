@@ -30,7 +30,7 @@ export const FocusStrip: React.FC = () => {
   const dashOffset = circumference - (overallProgress / 100) * circumference
 
   return (
-    <div className="flex gap-3 px-6 py-3 shrink-0">
+    <div data-tour="focus-strip" className="flex gap-3 px-6 py-3 shrink-0">
       {/* Total Items */}
       <div className="focus-tile flex-1 relative group">
         <div className="flex items-center justify-between">
