@@ -185,7 +185,7 @@ export const ChatView: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden max-w-5xl w-full mx-auto px-6 py-4">
+    <div data-tour="chat-view" className="flex-1 flex flex-col overflow-hidden max-w-5xl w-full mx-auto px-6 py-4">
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-3 mb-2 border-b border-white/[0.08] shrink-0">
         <div className="flex items-center gap-2.5">

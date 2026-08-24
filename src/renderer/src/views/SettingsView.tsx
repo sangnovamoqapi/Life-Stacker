@@ -2,11 +2,40 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useAppContext } from '../state/AppContext'
 
 export const SettingsView: React.FC = () => {
-  const { settings, updateSettings, sectors, reorderSectors, openSectorModal, showToast } = useAppContext()
+  const { settings, updateSettings, sectors, reorderSectors, openSectorModal, showToast, openHelpModal, startTour } = useAppContext()
   const [exporting, setExporting] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([])
+  const [ollamaStatus, setOllamaStatus] = useState<boolean | null>(null)
+  const [ollamaError, setOllamaError] = useState<string | null>(null)
+  const [installedModels, setInstalledModels] = useState<string[]>([])
+  const [isLoadingModels, setIsLoadingModels] = useState(false)
+  const [customModelTag, setCustomModelTag] = useState('')
+  const [isCustomModel, setIsCustomModel] = useState(false)
   const previewCameraRef = useRef<HTMLVideoElement>(null)
+
+  const fetchOllamaInfo = async () => {
+    setIsLoadingModels(true)
+    try {
+      const [status, err, models] = await Promise.all([
+        window.api.ai.checkStatus(),
+        window.api.ai.getLastError(),
+        window.api.ai.listModels()
+      ])
+      setOllamaStatus(status)
+      setOllamaError(err)
+      setInstalledModels(models)
+    } catch (e: any) {
+      setOllamaStatus(false)
+      setOllamaError(e?.message || 'Failed to communicate with local Ollama')
+    } finally {
+      setIsLoadingModels(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchOllamaInfo()
+  }, [])
 
   const loadCameras = async () => {
     try {
@@ -168,6 +197,24 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-mono text-slate-300 mb-1.5 uppercase tracking-wider">
+                Weekly Personal Hours (Discretionary Time)
+              </label>
+              <div className="flex gap-3 items-center">
+                <input 
+                  type="number" 
+                  min="0" 
+                  max="168"
+                  step="1"
+                  value={settings.weekly_personal_hours ?? 28}
+                  onChange={e => updateSettings('weekly_personal_hours', parseFloat(e.target.value) || 0)}
+                  className="bg-[#121622]/90 border border-white/[0.12] rounded-lg px-3 py-1.5 w-24 text-slate-100 outline-none focus:border-blue-500 font-mono"
+                />
+                <span className="text-xs text-slate-400">Hours/week for personal projects (excl. work/school)</span>
+              </div>
+            </div>
+
             <div className="pt-2 space-y-2.5 border-t border-white/[0.06]">
               <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer">
                 <input 
@@ -194,6 +241,162 @@ export const SettingsView: React.FC = () => {
                 />
                 <span>Launch at login</span>
               </label>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={openHelpModal}
+                  className="w-full py-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>❓</span>
+                  <span>View Workflow & Methodology Guide</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Local AI & Ollama Configuration */}
+        <section className="glass-panel rounded-2xl p-6 space-y-5">
+          <div className="flex justify-between items-center border-b border-white/[0.08] pb-3">
+            <div>
+              <h2 className="font-sans text-xl font-bold text-slate-100 flex items-center gap-2">
+                <span>✦</span> Local AI & Models (Ollama)
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">Configure local LLM models for ✦ Chat assistant and Explore research synthesis.</p>
+            </div>
+            
+            <button 
+              type="button"
+              onClick={fetchOllamaInfo}
+              disabled={isLoadingModels}
+              className="text-xs font-mono bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 px-3 py-1.5 rounded-lg border border-white/[0.08] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <span>{isLoadingModels ? '🔄 Refreshing...' : '🔄 Refresh Models'}</span>
+            </button>
+          </div>
+
+          <div className="space-y-4 max-w-lg">
+            {/* Connection Status Badge */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-black/30 border border-white/[0.08]">
+              <div className="flex items-center gap-2.5">
+                <span className={`w-2.5 h-2.5 rounded-full ${ollamaStatus ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse' : 'bg-rose-500'}`} />
+                <div>
+                  <span className="text-xs font-semibold text-slate-200 block">
+                    {ollamaStatus ? 'Ollama Connected' : 'Ollama Offline or Not Ready'}
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400 block">
+                    http://127.0.0.1:11434
+                  </span>
+                </div>
+              </div>
+
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                ollamaStatus ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+              }`}>
+                {ollamaStatus ? 'ONLINE' : 'OFFLINE'}
+              </span>
+            </div>
+
+            {ollamaError && !ollamaStatus && (
+              <p className="text-xs text-rose-400 bg-rose-950/30 border border-rose-500/20 p-2.5 rounded-lg">
+                ⚠️ {ollamaError}
+              </p>
+            )}
+
+            {/* Chat & Synthesis Model Picker */}
+            <div>
+              <label className="block text-xs font-mono text-slate-300 mb-1.5 uppercase tracking-wider">
+                Active Chat & Synthesis Model
+              </label>
+              
+              {!isCustomModel ? (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <select
+                      value={settings.chat_model ?? 'llama3.2:3b'}
+                      onChange={e => {
+                        if (e.target.value === '__custom__') {
+                          setIsCustomModel(true)
+                          setCustomModelTag(settings.chat_model || '')
+                        } else {
+                          updateSettings('chat_model', e.target.value)
+                          showToast(`Active AI model set to "${e.target.value}"`, 'success')
+                        }
+                      }}
+                      className="w-full bg-[#121622]/90 border border-white/[0.12] rounded-lg px-3 py-2 text-xs text-slate-100 outline-none focus:border-blue-500 font-mono cursor-pointer appearance-none"
+                    >
+                      {installedModels.length > 0 ? (
+                        installedModels
+                          .filter(m => !m.toLowerCase().includes('embed'))
+                          .map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))
+                      ) : (
+                        <option value={settings.chat_model ?? 'llama3.2:3b'}>
+                          {settings.chat_model ?? 'llama3.2:3b'} (Auto-detected)
+                        </option>
+                      )}
+                      <option value="__custom__">✏️ Custom Model Tag...</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 text-xs">
+                      ▼
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Used for ✦ Chat assistant conversations and AI synthesis of Explore research into Next actions.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customModelTag}
+                      onChange={e => setCustomModelTag(e.target.value)}
+                      placeholder="e.g. gemma4:e2b, qwen2.5:7b, mistral..."
+                      className="flex-1 bg-[#121622]/90 border border-white/[0.12] rounded-lg px-3 py-1.5 text-xs text-slate-100 outline-none focus:border-blue-500 font-mono"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmed = customModelTag.trim()
+                        if (trimmed) {
+                          updateSettings('chat_model', trimmed)
+                          showToast(`Custom model set to "${trimmed}"`, 'success')
+                          setIsCustomModel(false)
+                        }
+                      }}
+                      disabled={!customModelTag.trim()}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomModel(false)}
+                      className="px-2.5 py-1.5 text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Type any model tag pulled in your local Ollama library (e.g. <code className="text-amber-300 font-mono">gemma4:e2b</code>).
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Vector Embedding Model Status */}
+            <div className="p-3 rounded-xl bg-black/20 border border-white/[0.06] space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-300">Vector Embeddings:</span>
+                <span className="text-xs font-mono text-purple-300 font-bold">nomic-embed-text</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Computes 768-dim embeddings for SQLite hybrid memory search. Run <code className="text-amber-300 font-mono">ollama pull nomic-embed-text</code> if missing.
+              </p>
             </div>
           </div>
         </section>
@@ -483,6 +686,45 @@ export const SettingsView: React.FC = () => {
                 </p>
               </div>
             )}
+          </div>
+        </section>
+
+        {/* Feature Flags & Onboarding Tour */}
+        <section className="glass-panel rounded-2xl p-6 space-y-5">
+          <h2 className="font-sans text-xl font-bold text-slate-100 border-b border-white/[0.08] pb-3 flex items-center justify-between">
+            <span>✦ Feature Flags & Onboarding</span>
+            <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/30">
+              Experimental
+            </span>
+          </h2>
+          <div className="space-y-4 max-w-lg">
+            <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={settings.feature_interactive_tour !== false}
+                onChange={e => updateSettings('feature_interactive_tour', e.target.checked)}
+                className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+              />
+              <span>Enable Interactive UI Walkthrough Tour</span>
+            </label>
+            <p className="text-xs text-slate-400 pl-6.5">
+              Provides step-by-step interactive spotlights explaining LifeStack 2.0's 4-tier system, 2×2 tactical cockpit, and local AI assistant.
+            </p>
+
+            <div className="pt-2 pl-6.5">
+              <button
+                type="button"
+                onClick={() => {
+                  startTour()
+                  showToast('Interactive Tour Started!', 'info')
+                }}
+                disabled={settings.feature_interactive_tour === false}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2"
+              >
+                <span>🚀</span>
+                <span>Launch Interactive Tour Now</span>
+              </button>
+            </div>
           </div>
         </section>
 

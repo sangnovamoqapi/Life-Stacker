@@ -99,6 +99,14 @@ interface AppContextType {
   setEffortPrompt: (state: EffortPromptState | null) => void
   setChecklistEffortPrompt: (state: ChecklistEffortPromptState | null) => void
 
+  isHelpOpen: boolean
+  openHelpModal: () => void
+  closeHelpModal: () => void
+
+  isTourActive: boolean
+  startTour: () => void
+  stopTour: () => void
+
   getItemById: (id: string) => Item | undefined
   getSectorById: (id: string) => Sector | undefined
   getItemsForSector: (sectorId: string) => Item[]
@@ -116,6 +124,9 @@ const defaultSettings: AppSettings = {
   stack_review_enabled: true,
   stack_review_day: 0,
   stack_review_time: '18:00',
+  chat_model: 'llama3.2:3b',
+  feature_interactive_tour: true,
+  has_completed_tour: false,
   background_config: { type: 'gradient', value: 'radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d' }
 }
 
@@ -133,6 +144,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [effortPrompt, setEffortPrompt] = useState<EffortPromptState | null>(null)
   const [checklistEffortPrompt, setChecklistEffortPrompt] = useState<ChecklistEffortPromptState | null>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [exploreItems, setExploreItems] = useState<Record<string, ExploreItem[]>>({})
   const [nextItems, setNextItems] = useState<Record<string, NextItem[]>>({})
 
@@ -193,6 +205,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const stack_review_enabled = (await window.api.settings.get<boolean>('stack_review_enabled')) ?? true
       const stack_review_day = (await window.api.settings.get<number>('stack_review_day')) ?? 0
       const stack_review_time = (await window.api.settings.get<string>('stack_review_time')) ?? '18:00'
+      const chat_model = (await window.api.settings.get<string>('chat_model')) ?? 'llama3.2:3b'
+      const feature_interactive_tour = (await window.api.settings.get<boolean>('feature_interactive_tour')) ?? true
+      const has_completed_tour = (await window.api.settings.get<boolean>('has_completed_tour')) ?? false
       const background_config = (await window.api.settings.get<{type: 'color'|'gradient'|'image'|'video', value: string}>('background_config')) ?? { type: 'gradient', value: 'radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d' }
       
       setSettings({
@@ -207,6 +222,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         stack_review_enabled,
         stack_review_day,
         stack_review_time,
+        chat_model,
+        feature_interactive_tour,
+        has_completed_tour,
         background_config
       })
     } catch (err) {
@@ -415,6 +433,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const newList = currentList.map(n => n.id === id ? updated : n)
       return { ...prev, [epicId]: newList }
     })
+    if (updated.status !== 'done') {
+      setItems(prev => prev.map(item => item.id === updated.epic_id && item.status === 'done' ? { ...item, status: 'active' } : item))
+    }
     return updated
   }
 
@@ -426,6 +447,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const newList = currentList.map(n => n.id === id ? updated : n)
       return { ...prev, [epicId]: newList }
     })
+    if (updated.status !== 'done') {
+      setItems(prev => prev.map(item => item.id === updated.epic_id && item.status === 'done' ? { ...item, status: 'active' } : item))
+    }
     return updated
   }
 
@@ -437,6 +461,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const newList = currentList.map(n => n.id === id ? updated : n)
       return { ...prev, [epicId]: newList }
     })
+    if (updated.status !== 'done') {
+      setItems(prev => prev.map(item => item.id === updated.epic_id && item.status === 'done' ? { ...item, status: 'active' } : item))
+    }
     return updated
   }
 
@@ -448,6 +475,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const newList = currentList.map(n => n.id === id ? updated : n)
       return { ...prev, [epicId]: newList }
     })
+    if (updated.status !== 'done') {
+      setItems(prev => prev.map(item => item.id === updated.epic_id && item.status === 'done' ? { ...item, status: 'active' } : item))
+    }
     return updated
   }
 
@@ -630,6 +660,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setModalType('sector')
   }
 
+  const openHelpModal = () => setIsHelpOpen(true)
+  const closeHelpModal = () => setIsHelpOpen(false)
+
+  const [isTourActive, setIsTourActive] = useState(false)
+  const startTour = () => {
+    setIsTourActive(true)
+    setIsHelpOpen(false)
+    if (modalType) closeModal()
+  }
+  const stopTour = () => {
+    setIsTourActive(false)
+  }
+
   const closeModal = () => {
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
@@ -663,13 +706,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <AppContext.Provider value={{
       sectors, items, settings, searchTerm, viewMode, selectedItemId, selectedSectorId, modalType, effortPrompt, checklistEffortPrompt, toasts,
-      exploreItems, nextItems, actionSteps,
+      exploreItems, nextItems, actionSteps, isHelpOpen, isTourActive,
       refreshAll, createItem, updateItem, deleteItem, createSector, updateSector, deleteSector, reorderSectors, reorderItem, setUrgent, addEffort, updateSettings,
       toggleChecklistItem, getExploreItems, addExploreItem, updateExploreItem, toggleExploreItemClosed, deleteExploreItem,
       getNextItems, addNextItem, addNextItemsBatch, updateNextItem, toggleNextItem, promoteToToday, demoteFromToday, deleteNextItem, reorderNextItems, reorderTodayItems,
       getResearchProgress, getExecutionProgress, getEpicStage,
       getActionSteps, addActionStep, toggleActionStep, deleteActionStep, updateActionStep, reorderActionSteps,
       setSearchTerm, setViewMode, openItemModal, openNewItemModal, openSectorModal, closeModal, showToast, dismissToast, setEffortPrompt, setChecklistEffortPrompt,
+      openHelpModal, closeHelpModal, startTour, stopTour,
       getItemById, getSectorById, getItemsForSector
     }}>
       {children}

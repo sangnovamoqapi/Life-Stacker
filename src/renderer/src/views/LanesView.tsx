@@ -52,7 +52,7 @@ export const LanesView: React.FC = () => {
   const getSector = (sectorId: string) => sectors.find(s => s.id === sectorId) || sectors[0]
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div data-tour="lanes-view" className="flex-1 flex flex-col overflow-hidden">
       <FocusStrip />
 
       {/* Lanes Sub-Header: Active Cap + Tab Switcher */}

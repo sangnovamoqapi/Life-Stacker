@@ -263,6 +263,10 @@ export interface AppSettings {
   stack_review_day: number
   stack_review_time: string
   background_config: BackgroundConfig
+  chat_model?: string
+  has_seen_onboarding?: boolean
+  feature_interactive_tour?: boolean
+  has_completed_tour?: boolean
 }
 
 // ──────────────────────────── Chat & Pending Actions ────────────────────────────
@@ -346,6 +350,7 @@ export interface LifeStackAPI {
   ai: {
     checkStatus(): Promise<boolean>
     getLastError(): Promise<string | null>
+    listModels(): Promise<string[]>
     generateNextFromExplore(title: string, notes: string): Promise<{ title: string; time_estimate_value?: number; time_estimate_unit?: string }[]>
   }
   chat: {

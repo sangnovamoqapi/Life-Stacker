@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAppContext } from '../state/AppContext'
 
 export const TopBar: React.FC = () => {
-  const { viewMode, setViewMode, searchTerm, setSearchTerm, items, settings, openNewItemModal } = useAppContext()
+  const { viewMode, setViewMode, searchTerm, setSearchTerm, items, settings, openNewItemModal, openHelpModal } = useAppContext()
   const [aiReady, setAiReady] = useState<boolean | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
 
@@ -47,7 +47,7 @@ export const TopBar: React.FC = () => {
   }
 
   return (
-    <div className="sticky top-0 z-20 bg-[#0d1017]/80 backdrop-blur-md border-b border-white/[0.08] h-14 flex items-center px-6 justify-between shrink-0 gap-4">
+    <div data-tour="topbar" className="sticky top-0 z-20 bg-[#0d1017]/80 backdrop-blur-md border-b border-white/[0.08] h-14 flex items-center px-6 justify-between shrink-0 gap-4">
       {/* Brand & Active Pill */}
       <div className="flex items-center gap-4 shrink-0">
         <div className="flex items-center gap-2.5">
@@ -125,6 +125,15 @@ export const TopBar: React.FC = () => {
             )
           })}
         </div>
+
+        {/* Workflow Guide Button */}
+        <button 
+          onClick={openHelpModal}
+          className="text-slate-400 hover:text-slate-200 transition-colors p-2 rounded-full hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08]"
+          title="Workflow & Guide"
+        >
+          ❓
+        </button>
 
         {/* Settings Button */}
         <button 

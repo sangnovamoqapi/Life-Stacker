@@ -9,10 +9,12 @@ import { ChatView } from './views/ChatView'
 import { ItemModal } from './components/ItemModal'
 import { SectorModal } from './components/SectorModal'
 import { ChecklistEffortModal } from './components/ChecklistEffortModal'
+import { HelpModal } from './components/HelpModal'
+import { InteractiveTour } from './components/InteractiveTour'
 import { Toast } from './components/Toast'
 
 const MainContent: React.FC = () => {
-  const { viewMode, modalType, selectedItemId, selectedSectorId, settings } = useAppContext()
+  const { viewMode, modalType, selectedItemId, selectedSectorId, settings, isHelpOpen, closeHelpModal } = useAppContext()
   const videoRef = React.useRef<HTMLVideoElement>(null)
   const cameraVideoRef = React.useRef<HTMLVideoElement>(null)
   const [prefersReducedMotion, setPrefersReducedMotion] = React.useState(false)
@@ -174,6 +176,8 @@ const MainContent: React.FC = () => {
         {modalType === 'item' && <ItemModal key={selectedItemId || 'new-item'} />}
         {modalType === 'sector' && <SectorModal key={selectedSectorId || 'new-sector'} />}
         <ChecklistEffortModal />
+        <HelpModal isOpen={isHelpOpen} onClose={closeHelpModal} />
+        <InteractiveTour />
         
         <Toast />
       </div>
