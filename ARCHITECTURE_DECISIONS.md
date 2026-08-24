@@ -125,3 +125,109 @@ This document tracks all foundational architecture, design, and engineering deci
   3. Action & Modal Blurs: Added explicit pre-action blurs to `handleReject`, `handleAccept`, `handleToggleEdit`, and `closeModal` before setting `isSubmitting: true` or changing component state.
   4. CSS Hardening: Added `-webkit-app-region: no-drag !important` to all typable inputs, textareas, selects, and buttons in `index.css` to prevent OS window drag regions from capturing click and keystroke events.
 - **Rationale**: Completely eliminates orphaned focus and input locking across all component lifecycles, modal transitions, and dynamic card re-renders.
+
+---
+
+## ADR 014: 4-Tier Hierarchical Data Model (Phase 0)
+- **Date**: 2026-08-20
+- **Decision**: Restructured LifeStack's domain model into a strict 4-tier hierarchy:
+  1. **Sectors**: High-level life domains (`Career`, `Health`, `Learning`, `Side Projects`, `Relationships`, `Home & Admin`).
+  2. **Active Epics (`items`)**: In-flight goals/initiatives with planning horizon budgets (`items.time_budget`: `{ value, unit }`).
+  3. **Explore Topics (`explore_items`)**: Open-ended research, questions, hypotheses, and unstructured findings that require investigation before execution tasks can be defined (`id`, `epic_id`, `title`, `notes`, `time_estimate_value`, `time_estimate_unit`, `closed`, `last_touched_at`, `created_at`).
+  4. **Next Items (`next_items`)**: Crisp, concrete execution steps (`id`, `epic_id`, `parent_explore_id`, `title`, `notes`, `status` (`'next'` | `'today'` | `'done'`), `time_estimate_value`, `time_estimate_unit`, `actual_effort_value`, `actual_effort_unit`, `due_date`, `sort_order`, `created_at`, `completed_at`).
+- **Integrity Constraints**:
+  - Automatically migrated legacy `action_steps` table into `next_items`.
+  - Deleting an Explore card with active linked Next items is blocked unless the parent Epic is `done` or Next items are reassigned.
+  - Cascading deletion permanently cleans up child Explore and Next items when a parent Epic is deleted.
+- **Rationale**: Real-world initiatives divide into two distinct phases: exploratory inquiry (unknowns, comparisons, research) and execution actions (concrete steps). Separating them into relational tiers eliminates the confusion of mixing vague research ideas with executable task backlogs.
+
+---
+
+## ADR 015: Dual Progress Meters & Stage Classification (Phase 1)
+- **Date**: 2026-08-21
+- **Decision**:
+  1. **Dual Track Meters**: Replaced flat percentage slider with independent computed dual progress bars on Epics:
+     - **Research Meter**: $\frac{\text{closed explore topics}}{\text{total explore topics}} \times 100\%$
+     - **Execution Meter**: $\frac{\text{completed next items}}{\text{total next items}} \times 100\%$
+  2. **Computed Stage Badges**: Epics dynamically compute their lifecycle stage without manual status dropdowns:
+     - `Researching`: Open explore topics exist with 0 next items.
+     - `Executing`: Active next items exist in backlog or today.
+     - `Done`: All next items completed.
+  3. **Parked / Icebox Active Cap & ParkSwapModal**:
+     - Hard cap of 5 concurrent active epics (`active_epic_cap`, default: 5).
+     - Epics created beyond the cap or demoted transition to `status = 'parked'`.
+     - Implemented `ParkSwapModal` allowing 1-click swapping between parked and active epics.
+- **Rationale**: Research and execution have fundamentally different velocities. A dual meter gives instant visual insight into whether an epic is stuck in discovery or actively being executed, while an active cap prevents cognitive overload.
+
+---
+
+## ADR 016: 2×2 Tactical Command Grid & Tri-Modal Sorting (Phase 2)
+- **Date**: 2026-08-21
+- **Decision**:
+  1. **4-Quadrant Overview**: Structured `OverviewView.tsx` into a high-density 2×2 command grid:
+     - **Top-Left (Active Epics)**: In-flight epics with dual progress meters and stage badges.
+     - **Top-Right (Explore Research Panel)**: Aggregated active explore cards across all epics, sorted by **Staleness** (oldest `last_touched_at` first) to surface neglected research.
+     - **Bottom-Left (Next Actions Backlog)**: Aggregated next actions sorted by **Due Date**, then **Effort Value (Ascending)** (quick wins first).
+     - **Bottom-Right (Today's Focus)**: Daily execution commitment strictly capped at 3 (`today_cap`), supporting drag-and-drop manual ordering and `TodayBumpModal` when capacity is exceeded.
+  2. **Collapsible Grid Panels**: Interactive `[ − ]` / `[ ＋ ]` toggles on all 4 panels with states persisted in `localStorage` (`lifestack_overview_collapsed`).
+- **Rationale**: Eliminates endless scrolling across multiple project pages. Provides a unified cockpit where research staleness, execution order, and daily commitment are visible simultaneously.
+
+---
+
+## ADR 017: Explore-to-Next AI Synthesis & Atomic Batch Staging (Phase 3)
+- **Date**: 2026-08-22
+- **Decision**:
+  1. **AI Research Synthesis (`generateDraftNextItems`)**:
+     - Extracts unstructured research findings from Explore cards.
+     - Passes prompt with `format: 'json'` to local Ollama chat model to generate 2–4 concrete next actions with estimated hours.
+     - Fallback heuristic parsing extracts bullet points when Ollama is offline.
+  2. **Inline Draft Staging Sandbox**:
+     - Generated actions appear in an editable staging sandbox in `ItemModal` before database commitment.
+     - Users can modify titles, adjust effort hours, or delete unwanted drafts.
+  3. **Atomic Batch Commit (`nextItems:createBatch`)**:
+     - All approved draft items are inserted inside a single SQLite transaction with `parent_explore_id` linking.
+- **Rationale**: Research notes often become dead ends. Providing an automated bridge from findings to concrete tasks turns research into execution without manual transcription friction.
+
+---
+
+## ADR 018: Derived Pace, Burn Tracking Engine & Discretionary Capacity (Phase 4)
+- **Date**: 2026-08-22
+- **Decision**:
+  1. **Non-Alerting Informational Pace Engine (`pace.ts`)**:
+     - Calculates actual weekly burn rate from `effort_log` compared against the Epic's planning horizon (`items.time_budget`).
+     - Derives horizon consumption ($\frac{\text{elapsed time}}{\text{budgeted time}}$) and pace velocity.
+     - Informational only (no disruptive push alerts), enabled by default (`burn_tracking_enabled: true`).
+  2. **Discretionary Capacity Parameter (`weekly_personal_hours`)**:
+     - Added setting for weekly personal project hours (default: 28 hrs/week, max: 168).
+     - Explicitly defined as discretionary capacity excluding compulsory 9-to-5 employment or school commitments.
+- **Rationale**: Gives users a realistic, guilt-free understanding of their project velocity and time horizons without imposing stressful deadlines or productivity anxiety.
+
+---
+
+## ADR 019: Automated Playwright Electron Test Suite & Invariant State Sweep (Phase 6)
+- **Date**: 2026-08-23
+- **Decision**:
+  1. **Direct DB Invariant Suite (`tests/db_edge_cases.test.mjs`)**:
+     - Executes natively via Electron Node runner (`ELECTRON_RUN_AS_NODE=1`) to match SQLite native ABI (`NODE_MODULE_VERSION = 130`).
+     - Covers 11 edge-case invariants: empty epic completion, task reopening cascade reverting parent Epic to `active`, deletion restrictions on linked explore cards, and today cap bounds.
+  2. **Playwright Electron End-to-End Suite (`tests/electron_ui_qa.spec.ts`)**:
+     - End-to-end headless and windowed testing across navigation transitions, modal workflows, cramped window layouts, and 0-error exception audits.
+- **Rationale**: Guarantee stability, avoid regression across native SQLite bindings, and verify that user interface workflows match strict state invariants.
+
+---
+
+## ADR 020: Dynamic Local AI Model Selector & 4-Tier Assistant Architecture
+- **Date**: 2026-08-24
+- **Decision**:
+  1. **Live Model Discovery & Selection**:
+     - IPC bridge `ai:listModels` dynamically queries Ollama `/api/tags`.
+     - Settings view renders an interactive model dropdown and custom tag input (e.g. `gemma4:e2b`, `llama3.2:3b`, `qwen2.5:3b`), updating `settings.chat_model`.
+     - Bound across both the Chat Assistant (`chat.ts`) and Explore $\to$ Next Generator (`ollama-client.ts`).
+  2. **4-Tier LLM Tool Calling & System Prompt**:
+     - Upgraded system prompt to explicitly model the 4-Tier Framework (Sectors $\to$ Epics $\to$ Explore Topics $\to$ Next Actions).
+     - Added native tools `explore_create` and `next_items_create`, and expanded `items_create` to accept nested `explore_topics` and `next_items`.
+  3. **Robust Explore Normalization & Interactive Diff Cards**:
+     - Implemented `normalizeExploreTopics()` to handle cases where LLMs provide notes without titles (auto-extracting the first sentence as title).
+     - Upgraded `ActionDiffCard.tsx` with dedicated purple `🔬 Explore Topics` and amber `⚡ Next Actions` editors and previews.
+- **Rationale**: Gives users complete flexibility to run any local open-source LLM while ensuring the AI understands the distinction between open-ended research and concrete execution steps.
+
