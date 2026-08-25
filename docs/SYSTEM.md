@@ -26,6 +26,7 @@ LifeStack is a local-first desktop life operating system built on a 4-tier hiera
 | Pace & Horizon | Non-alerting velocity calculation and discretionary capacity modeling (28h/week) | [ADR 018](../ARCHITECTURE_DECISIONS.md#adr-018-derived-pace-burn-tracking-engine--discretionary-capacity-phase-4) |
 | AI Model Choice | Dynamic Ollama /api/tags discovery, custom tag selector, and 4-tier native tool calling | [ADR 020](../ARCHITECTURE_DECISIONS.md#adr-020-dynamic-local-ai-model-selector--4-tier-assistant-architecture) |
 | Interactive Tour | Dynamic SVG spotlight walkthrough with deferred roadmap for Lanes re-visualization and Stats revamp | [ADR 021](../ARCHITECTURE_DECISIONS.md#adr-021-interactive-ui-walkthrough--deferred-screen-roadmap-lanes--stats-revamps) |
+| Theme Architecture | Flat warm-neutral minimal token system with instant runtime light/dark switching and WCAG AA contrast | [ADR 022](../ARCHITECTURE_DECISIONS.md#adr-022-flat-warm-neutral-minimal-dual-mode-token-system--runtime-theme-switching) |
 
 ## Cost model
 

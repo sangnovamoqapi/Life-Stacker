@@ -107,6 +107,10 @@ interface AppContextType {
   startTour: () => void
   stopTour: () => void
 
+  themeMode: 'dark' | 'light'
+  toggleTheme: () => void
+  setThemeMode: (mode: 'dark' | 'light') => Promise<void>
+
   getItemById: (id: string) => Item | undefined
   getSectorById: (id: string) => Sector | undefined
   getItemsForSector: (sectorId: string) => Item[]
@@ -127,6 +131,7 @@ const defaultSettings: AppSettings = {
   chat_model: 'llama3.2:3b',
   feature_interactive_tour: true,
   has_completed_tour: false,
+  theme_mode: 'dark',
   background_config: { type: 'gradient', value: 'radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d' }
 }
 
@@ -208,8 +213,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const chat_model = (await window.api.settings.get<string>('chat_model')) ?? 'llama3.2:3b'
       const feature_interactive_tour = (await window.api.settings.get<boolean>('feature_interactive_tour')) ?? true
       const has_completed_tour = (await window.api.settings.get<boolean>('has_completed_tour')) ?? false
+      const theme_mode = (await window.api.settings.get<'dark' | 'light'>('theme_mode')) ?? 'dark'
       const background_config = (await window.api.settings.get<{type: 'color'|'gradient'|'image'|'video', value: string}>('background_config')) ?? { type: 'gradient', value: 'radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d' }
       
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', theme_mode)
+      }
+
       setSettings({
         active_epic_cap,
         focus_limit: active_epic_cap, // keep focus_limit synchronized
@@ -225,6 +235,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         chat_model,
         feature_interactive_tour,
         has_completed_tour,
+        theme_mode,
         background_config
       })
     } catch (err) {
@@ -703,17 +714,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return sectorItems
   }, [items])
 
+  const themeMode: 'dark' | 'light' = settings.theme_mode || 'dark'
+  const setThemeMode = async (mode: 'dark' | 'light') => {
+    await updateSettings('theme_mode', mode)
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', mode)
+    }
+  }
+  const toggleTheme = async () => {
+    const nextMode = themeMode === 'dark' ? 'light' : 'dark'
+    await setThemeMode(nextMode)
+  }
+
   return (
     <AppContext.Provider value={{
       sectors, items, settings, searchTerm, viewMode, selectedItemId, selectedSectorId, modalType, effortPrompt, checklistEffortPrompt, toasts,
-      exploreItems, nextItems, actionSteps, isHelpOpen, isTourActive,
+      exploreItems, nextItems, actionSteps, isHelpOpen, isTourActive, themeMode,
       refreshAll, createItem, updateItem, deleteItem, createSector, updateSector, deleteSector, reorderSectors, reorderItem, setUrgent, addEffort, updateSettings,
       toggleChecklistItem, getExploreItems, addExploreItem, updateExploreItem, toggleExploreItemClosed, deleteExploreItem,
       getNextItems, addNextItem, addNextItemsBatch, updateNextItem, toggleNextItem, promoteToToday, demoteFromToday, deleteNextItem, reorderNextItems, reorderTodayItems,
       getResearchProgress, getExecutionProgress, getEpicStage,
       getActionSteps, addActionStep, toggleActionStep, deleteActionStep, updateActionStep, reorderActionSteps,
       setSearchTerm, setViewMode, openItemModal, openNewItemModal, openSectorModal, closeModal, showToast, dismissToast, setEffortPrompt, setChecklistEffortPrompt,
-      openHelpModal, closeHelpModal, startTour, stopTour,
+      openHelpModal, closeHelpModal, startTour, stopTour, toggleTheme, setThemeMode,
       getItemById, getSectorById, getItemsForSector
     }}>
       {children}

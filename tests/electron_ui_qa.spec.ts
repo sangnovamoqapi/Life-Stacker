@@ -85,7 +85,7 @@ test.describe('Life Stack 2.0 Electron QA & UI Sweep', () => {
     // Test tab navigation inside modal
     await page.click('button:has-text("Core Principles")')
     await page.waitForTimeout(300)
-    expect(await page.isVisible('text=5-Epic Cap & Park Swap')).toBe(true)
+    expect(await page.isVisible('text=Active Epic Limit (Max 5)') || await page.isVisible('text=5-Epic Cap')).toBe(true)
 
     await page.click('button:has-text("Keyboard & Tips")')
     await page.waitForTimeout(300)

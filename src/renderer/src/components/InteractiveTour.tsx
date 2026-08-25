@@ -289,10 +289,10 @@ export const InteractiveTour: React.FC = () => {
         onClick={handleExit}
       />
 
-      {/* Spotlight Glowing Ring around target */}
+      {/* Spotlight Ring around target */}
       {targetRect && (
         <div
-          className="absolute pointer-events-none border-2 border-amber-400/80 rounded-2xl shadow-[0_0_20px_rgba(251,191,36,0.4),inset_0_0_12px_rgba(251,191,36,0.2)] transition-all duration-300 animate-pulse"
+          className="absolute pointer-events-none border-2 border-accent rounded-2xl shadow-soft transition-all duration-300 animate-pulse"
           style={{
             top: `${targetRect.top}px`,
             left: `${targetRect.left}px`,
@@ -307,25 +307,25 @@ export const InteractiveTour: React.FC = () => {
       <div 
         ref={cardRef}
         style={getCardStyle()}
-        className="bg-[#0e1320]/95 border border-white/[0.25] rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9)] p-5 text-slate-100 flex flex-col gap-3.5"
+        className="bg-surface-modal border border-border-strong rounded-2xl shadow-modal p-5 text-text-primary flex flex-col gap-3.5"
         onClick={e => e.stopPropagation()}
       >
         {/* Top Meta Bar */}
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-mono font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
+          <span className="text-[10px] font-mono font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-accent-subtle text-accent border border-accent/30">
             {step.badge}
           </span>
-          <span className="text-xs font-mono text-slate-400">
-            Step <strong className="text-amber-400">{currentStepIdx + 1}</strong> of {TOUR_STEPS.length}
+          <span className="text-xs font-mono text-text-muted">
+            Step <strong className="text-accent">{currentStepIdx + 1}</strong> of {TOUR_STEPS.length}
           </span>
         </div>
 
         {/* Title & Body */}
         <div className="space-y-1.5">
-          <h3 className="font-serif text-lg font-bold text-slate-100">
+          <h3 className="font-serif text-lg font-bold text-text-primary">
             {step.title}
           </h3>
-          <p className="text-xs text-slate-300 leading-relaxed font-sans">
+          <p className="text-xs text-text-secondary leading-relaxed font-sans">
             {step.content}
           </p>
         </div>
@@ -337,21 +337,21 @@ export const InteractiveTour: React.FC = () => {
               key={i} 
               className={`h-1.5 rounded-full transition-all duration-300 ${
                 i === currentStepIdx 
-                  ? 'w-6 bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]' 
+                  ? 'w-6 bg-accent' 
                   : i < currentStepIdx 
-                    ? 'w-2 bg-blue-500/70' 
-                    : 'w-2 bg-white/15'
+                    ? 'w-2 bg-text-secondary' 
+                    : 'w-2 bg-surface-subtle border border-border-subtle'
               }`}
             />
           ))}
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-2.5 border-t border-white/[0.10]">
+        <div className="flex items-center justify-between pt-2.5 border-t border-border-subtle">
           <button
             type="button"
             onClick={handleExit}
-            className="text-xs font-mono text-slate-400 hover:text-slate-200 px-1.5 py-1 rounded hover:bg-white/[0.06] transition-colors cursor-pointer"
+            className="text-xs font-mono text-text-muted hover:text-text-primary px-1.5 py-1 rounded hover:bg-surface-subtle transition-colors cursor-pointer"
           >
             Skip (Esc)
           </button>
@@ -361,7 +361,7 @@ export const InteractiveTour: React.FC = () => {
               <button
                 type="button"
                 onClick={handlePrev}
-                className="px-3 py-1.5 text-xs font-mono font-semibold rounded-lg bg-white/[0.08] hover:bg-white/[0.15] text-slate-200 border border-white/[0.12] transition-colors cursor-pointer"
+                className="px-3 py-1.5 text-xs font-mono font-semibold rounded-lg bg-surface-subtle hover:bg-surface-raised text-text-secondary border border-border-subtle transition-colors cursor-pointer"
               >
                 ◂ Back
               </button>
@@ -370,7 +370,7 @@ export const InteractiveTour: React.FC = () => {
             <button
               type="button"
               onClick={handleNext}
-              className="px-4 py-1.5 text-xs font-mono font-bold rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-[0_2px_12px_rgba(245,158,11,0.4)] transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-1.5 text-xs font-mono font-bold rounded-lg bg-accent hover:bg-accent-hover text-white shadow-soft transition-all cursor-pointer flex items-center gap-1.5"
             >
               <span>{isLast ? 'Finish 🚀' : 'Next ▸'}</span>
             </button>

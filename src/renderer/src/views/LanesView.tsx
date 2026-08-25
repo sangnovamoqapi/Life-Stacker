@@ -62,8 +62,8 @@ export const LanesView: React.FC = () => {
             onClick={() => setActiveTab('sectors')}
             className={`px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer ${
               activeTab === 'sectors'
-                ? 'bg-white/[0.12] text-slate-100 border border-white/[0.18] shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                ? 'bg-surface-card text-text-primary border border-border-subtle shadow-soft'
+                : 'text-text-muted hover:text-text-primary hover:bg-surface-subtle'
             }`}
           >
             Sectors ({sectors.length})
@@ -73,22 +73,22 @@ export const LanesView: React.FC = () => {
             onClick={() => setActiveTab('parked')}
             className={`px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'parked'
-                ? 'bg-purple-500/20 text-purple-200 border border-purple-500/40 shadow-sm'
-                : 'text-slate-400 hover:text-purple-300 hover:bg-white/[0.04]'
+                ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30 shadow-soft'
+                : 'text-text-muted hover:text-purple-400 hover:bg-surface-subtle'
             }`}
           >
             <span>🅿️ Parked</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-              parkedItems.length > 0 ? 'bg-purple-500/30 text-purple-200' : 'bg-white/[0.06] text-slate-500'
+              parkedItems.length > 0 ? 'bg-purple-500/20 text-purple-400' : 'bg-surface-subtle text-text-muted'
             }`}>
               {parkedItems.length}
             </span>
           </button>
         </div>
 
-        <div className="text-xs font-mono text-slate-400 flex items-center gap-2">
+        <div className="text-xs font-mono text-text-muted flex items-center gap-2">
           <span>Active:</span>
-          <span className={`font-bold ${activeCount >= activeCap ? 'text-amber-400' : 'text-blue-400'}`}>
+          <span className={`font-bold ${activeCount >= activeCap ? 'text-accent' : 'text-accent'}`}>
             {activeCount} / {activeCap}
           </span>
         </div>
@@ -106,8 +106,7 @@ export const LanesView: React.FC = () => {
           
           <button 
             onClick={() => openSectorModal(null)}
-            className="w-[280px] shrink-0 h-24 border-2 border-dashed rounded-lg text-ink-dim hover:text-ink transition-colors flex items-center justify-center font-serif text-lg"
-            style={{ borderColor: 'var(--glass-border)' }}
+            className="w-[280px] shrink-0 h-24 border-2 border-dashed rounded-xl text-text-muted hover:text-text-primary hover:border-border-strong transition-colors flex items-center justify-center font-sans font-medium text-sm bg-surface-subtle/40 border-border-subtle"
           >
             + New Sector
           </button>
@@ -116,23 +115,23 @@ export const LanesView: React.FC = () => {
         /* Parked Epics Tab */
         <div className="flex-1 overflow-y-auto px-6 pb-6">
           <div className="max-w-4xl mx-auto">
-            <div className="p-4 rounded-2xl bg-purple-950/20 border border-purple-500/20 mb-6 flex items-start justify-between">
+            <div className="p-4 rounded-xl bg-surface-card border border-purple-500/30 mb-6 flex items-start justify-between shadow-soft">
               <div>
-                <div className="flex items-center gap-2 text-purple-300 font-bold text-sm">
+                <div className="flex items-center gap-2 text-purple-400 font-bold text-sm">
                   <span>🅿️</span>
                   <span>Parked Icebox Epics</span>
                 </div>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-text-secondary mt-1">
                   Epics stored here do not count toward your active cap ({activeCap}). Click Reactivate to bring an epic back into focus.
                 </p>
               </div>
-              <span className="font-mono text-xs text-purple-400 bg-purple-500/20 px-2.5 py-1 rounded-full border border-purple-500/30">
+              <span className="font-mono text-xs text-purple-400 bg-purple-500/15 px-2.5 py-1 rounded-full border border-purple-500/30">
                 {parkedItems.length} Parked
               </span>
             </div>
 
             {parkedItems.length === 0 ? (
-              <div className="text-center py-16 text-slate-500 font-serif italic">
+              <div className="text-center py-16 text-text-muted font-sans italic">
                 <div className="text-3xl mb-2 opacity-30">🅿️</div>
                 <div>No parked epics. All in-flight epics are actively tracked in sectors.</div>
               </div>

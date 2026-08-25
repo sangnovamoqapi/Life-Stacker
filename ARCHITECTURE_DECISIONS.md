@@ -246,3 +246,22 @@ This document tracks all foundational architecture, design, and engineering deci
      - **Roadmap Anchor**: Once the Lanes and Stats view revamps are implemented, corresponding interactive tour stops will be integrated into `TOUR_STEPS`.
 - **Rationale**: Keeps the current onboarding tour focused on stabilized 2×2 tactical grid, explore-to-next synthesis, and local AI diff card workflows, avoiding premature onboarding design for views undergoing near-term visualization overhauls.
 
+---
+
+## ADR 022: Flat Warm-Neutral Minimal Dual-Mode Token System & Runtime Theme Switching
+- **Date**: 2026-08-25
+- **Decision**:
+  1. **Dual-Mode CSS Token Architecture (`src/renderer/src/index.css`)**:
+     - Replaced frosted-glass blurs, glows, and heavy translucency with crisp, solid `--surface-*` tokens, 1px subtle borders (`--border-subtle`), single-layer soft shadows (`--shadow-soft`), and restrained terracotta accent (`--accent`).
+     - **Light Mode (`[data-theme='light']`)**: Warm off-white background (`#f6f4ee`), white card surface (`#ffffff`), 1px light warm borders (`#ded9ce`), near-black warm-gray text (`#1e1c1a`, 14.5:1 contrast), warm slate secondary (`#57534e`, 7.3:1 contrast), muted stone (`#78716c`, 4.6:1 contrast - WCAG AA compliant), terracotta accent (`#c25736`).
+     - **Dark Mode (`:root, [data-theme='dark']`)**: Warm dark charcoal background (`#151413`), stone card surface (`#23221f`), 1px subtle dark borders (`#302e2b`), off-white text (`#f3ede2`, 15.2:1 contrast), stone secondary (`#b3aca0`, 7.4:1 contrast), warm stone muted (`#8a8377`, 4.7:1 contrast - WCAG AA compliant), rust terracotta accent (`#d96b43`).
+     - Legacy `--glass-*` tokens preserved untouched for zero regression.
+  2. **Runtime Dynamic Theme Switcher Engine**:
+     - `AppSettings` expanded with `theme_mode?: 'dark' | 'light'`.
+     - `AppContext` dynamically manages `themeMode`, `toggleTheme()`, and `setThemeMode()`, setting `document.documentElement.setAttribute('data-theme', themeMode)` and updating root container without page reloads.
+     - ☀️/🌙 instant toggle button added to `TopBar` and segmented appearance switcher in `SettingsView`.
+  3. **Universal Component Modernization**:
+     - Updated all views (`OverviewView`, `LanesView`, `ChatView`, `SettingsView`, `StatsView`) and modals (`Card`, `Lane`, `ItemModal`, `FocusStrip`, `SectorModal`, `HelpModal`, `TodayBumpModal`, `ParkSwapModal`, `ChecklistEffortModal`, `Toast`, `ActionDiffCard`, `InteractiveTour`).
+- **Rationale**: Elevates readability and visual clarity with a refined, distraction-free aesthetic while achieving strict WCAG AA contrast compliance and instantaneous dual-mode switching.
+
+

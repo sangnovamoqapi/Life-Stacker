@@ -101,9 +101,12 @@ const MainContent: React.FC = () => {
   const opacity = Number((0.85 + (intensity / 100) * (0.35 - 0.85)).toFixed(3))
   const blurPx = Number((4 + (intensity / 100) * (24 - 4)).toFixed(1))
 
+  const themeMode = settings.theme_mode || 'dark'
+
   return (
     <div 
-      className="h-screen w-screen flex flex-col overflow-hidden relative"
+      data-theme={themeMode}
+      className="h-screen w-screen flex flex-col overflow-hidden relative bg-surface-bg text-text-primary"
       style={{
         '--glass-opacity': opacity,
         '--glass-blur-px': `${blurPx}px`,
@@ -113,7 +116,7 @@ const MainContent: React.FC = () => {
       } as React.CSSProperties}
     >
       {/* Background Layer */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden bg-surface-bg">
         {settings.background_config?.type === 'camera' ? (
           <video 
             key="camera-bg"
@@ -147,20 +150,15 @@ const MainContent: React.FC = () => {
           />
         ) : (
           <div 
-            key="gradient-bg"
-            className="w-full h-full"
-            style={{ background: settings.background_config?.value || 'radial-gradient(ellipse 800px 500px at 15% 10%, #2a2416 0%, transparent 60%), radial-gradient(ellipse 700px 600px at 85% 90%, #1a2b26 0%, transparent 60%), #0b0b0d' }}
+            key="flat-bg"
+            className="w-full h-full bg-surface-bg"
           />
         )}
 
         {/* Readability tint overlay over user media */}
         {(settings.background_config?.type === 'image' || settings.background_config?.type === 'video' || settings.background_config?.type === 'camera') && (
-          <div className="absolute inset-0 bg-black/20 pointer-events-none" />
+          <div className="absolute inset-0 bg-black/25 pointer-events-none" />
         )}
-
-        {/* Ambient glow */}
-        <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-lane-bg rounded-full blur-[120px] pointer-events-none opacity-40" />
-        <div className="absolute bottom-[-20%] left-[-10%] w-[40%] h-[40%] bg-card rounded-full blur-[100px] pointer-events-none opacity-20" />
       </div>
 
       {/* Foreground Content */}
