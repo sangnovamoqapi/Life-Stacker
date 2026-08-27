@@ -76,27 +76,46 @@ app.whenReady().then(() => {
           rawPath = parsedUrl.hostname
         }
       } catch {
-        rawPath = request.url.replace(/^media:\/\/(app\/)?/, '')
+        rawPath = request.url.replace(/^media:\/\//, '')
       }
+
       if (rawPath.startsWith('app/')) {
         rawPath = rawPath.substring(4)
       }
-      const decodedPath = path.normalize(decodeURIComponent(rawPath))
-      
-      if (!fs.existsSync(decodedPath)) {
-        return new Response('Not Found', { status: 404 })
+
+      let decoded = decodeURIComponent(rawPath)
+      // Normalize leading slash before Windows drive letter if present
+      if (/^[/\\]+[a-zA-Z]:/.test(decoded)) {
+        decoded = decoded.replace(/^[/\\]+/, '')
       }
 
-      const stat = fs.statSync(decodedPath)
+      const decodedPath = path.normalize(decoded)
+      let resolvedPath = decodedPath
+      if (!fs.existsSync(resolvedPath)) {
+        const attachPath = path.join(app.getPath('userData'), 'journal-attachments', path.basename(decodedPath))
+        if (fs.existsSync(attachPath)) {
+          resolvedPath = attachPath
+        } else {
+          return new Response('Not Found', { status: 404 })
+        }
+      }
+
+      const stat = fs.statSync(resolvedPath)
       const fileSize = stat.size
 
       // Determine MIME type
-      const ext = path.extname(decodedPath).toLowerCase()
+      const ext = path.extname(resolvedPath).toLowerCase()
       let contentType = 'application/octet-stream'
       if (ext === '.mp4') contentType = 'video/mp4'
       else if (ext === '.webm') contentType = 'video/webm'
       else if (ext === '.mkv') contentType = 'video/x-matroska'
       else if (ext === '.mov') contentType = 'video/quicktime'
+      else if (ext === '.mp3') contentType = 'audio/mpeg'
+      else if (ext === '.wav') contentType = 'audio/wav'
+      else if (ext === '.ogg') contentType = 'audio/ogg'
+      else if (ext === '.m4a') contentType = 'audio/mp4'
+      else if (ext === '.aac') contentType = 'audio/aac'
+      else if (ext === '.flac') contentType = 'audio/flac'
       else if (ext === '.png') contentType = 'image/png'
       else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg'
       else if (ext === '.webp') contentType = 'image/webp'
@@ -113,7 +132,7 @@ app.whenReady().then(() => {
           const end = match[2] ? parseInt(match[2], 10) : fileSize - 1
           const chunkSize = (end - start) + 1
 
-          const nodeStream = fs.createReadStream(decodedPath, { start, end })
+          const nodeStream = fs.createReadStream(resolvedPath, { start, end })
           const webStream = new ReadableStream({
             start(controller) {
               nodeStream.on('data', (chunk) => controller.enqueue(chunk))
@@ -140,7 +159,7 @@ app.whenReady().then(() => {
       }
 
       // Full content response
-      const nodeStream = fs.createReadStream(decodedPath)
+      const nodeStream = fs.createReadStream(resolvedPath)
       const webStream = new ReadableStream({
         start(controller) {
           nodeStream.on('data', (chunk) => controller.enqueue(chunk))

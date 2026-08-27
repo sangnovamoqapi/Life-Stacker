@@ -27,6 +27,8 @@ LifeStack is a local-first desktop life operating system built on a 4-tier hiera
 | AI Model Choice | Dynamic Ollama /api/tags discovery, custom tag selector, and 4-tier native tool calling | [ADR 020](../ARCHITECTURE_DECISIONS.md#adr-020-dynamic-local-ai-model-selector--4-tier-assistant-architecture) |
 | Interactive Tour | Dynamic SVG spotlight walkthrough with deferred roadmap for Lanes re-visualization and Stats revamp | [ADR 021](../ARCHITECTURE_DECISIONS.md#adr-021-interactive-ui-walkthrough--deferred-screen-roadmap-lanes--stats-revamps) |
 | Theme Architecture | Flat warm-neutral minimal token system with instant runtime light/dark switching and WCAG AA contrast | [ADR 022](../ARCHITECTURE_DECISIONS.md#adr-022-flat-warm-neutral-minimal-dual-mode-token-system--runtime-theme-switching) |
+| Graph Edges & Chat | Propose-never-commit diff card flow for graph edges, compact ID-to-title index, and seed vocabulary defense | [ADR 023](../ARCHITECTURE_DECISIONS.md#adr-023-graph-edges-in-chat--compact-id-indexing-amendment-17) |
+| Journal & Calendar | Zero-AI Journal with local media attachments, read-only chat querying, Today/Week toggle, and Gantt horizon timeline | [ADR 024](../ARCHITECTURE_DECISIONS.md#adr-024-journal-system-with-local-attachments-todayweek-toggle--calendargantt-horizons-amendment-20) |
 
 ## Cost model
 

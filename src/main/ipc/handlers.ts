@@ -7,15 +7,77 @@ import * as actionLogDb from '../db/action-log'
 import * as effortLogDb from '../db/effort-log'
 import * as settingsDb from '../db/settings'
 import * as edgesDb from '../db/edges'
+import * as journalDb from '../db/journal'
 import * as memoryDb from '../db/memory'
 import * as ollamaClient from '../ai/ollama-client'
 import * as chatEngine from '../ai/chat'
 import { getDb } from '../db/connection'
 import { exportSnapshot } from '../db/export'
+import { v4 as uuid } from 'uuid'
 import path from 'path'
 import fs from 'fs'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
+  // Journal IPC
+  ipcMain.handle('journal:selectAttachment', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Journal Attachments',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Media Files', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'mp4', 'webm', 'mov', 'mkv'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] },
+        { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'] },
+        { name: 'Video', extensions: ['mp4', 'webm', 'mov', 'mkv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    return result.canceled ? null : result.filePaths
+  })
+
+  ipcMain.handle('journal:save', async (_, content: string, attachmentPaths?: string[], parentId?: string) => {
+    const attachmentsToSave: { file_path: string; media_type: 'image' | 'audio' | 'video' }[] = []
+    
+    if (attachmentPaths && attachmentPaths.length > 0) {
+      const journalDir = path.join(app.getPath('userData'), 'journal-attachments')
+      if (!fs.existsSync(journalDir)) {
+        fs.mkdirSync(journalDir, { recursive: true })
+      }
+
+      for (const srcPath of attachmentPaths) {
+        if (!fs.existsSync(srcPath)) continue
+        const ext = path.extname(srcPath).toLowerCase()
+        let mediaType: 'image' | 'audio' | 'video' = 'image'
+        if (['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'].includes(ext)) {
+          mediaType = 'audio'
+        } else if (['.mp4', '.webm', '.mov', '.mkv'].includes(ext)) {
+          mediaType = 'video'
+        }
+
+        const cleanFileName = `${uuid()}${ext}`
+        const destPath = path.join(journalDir, cleanFileName)
+        fs.copyFileSync(srcPath, destPath)
+        attachmentsToSave.push({ file_path: destPath, media_type: mediaType })
+      }
+    }
+
+    return journalDb.createJournalEntry({ content, parent_id: parentId }, attachmentsToSave)
+  })
+
+  ipcMain.handle('journal:list', () => journalDb.listJournalEntries())
+  ipcMain.handle('journal:query', (_, startDate: string, endDate: string) => journalDb.queryJournalEntriesByDateRange(startDate, endDate))
+  ipcMain.handle('journal:delete', (_, id: string) => {
+    const entries = journalDb.listJournalEntries()
+    const target = entries.find(e => e.id === id)
+    if (target && target.attachments) {
+      for (const att of target.attachments) {
+        try {
+          if (fs.existsSync(att.file_path)) fs.unlinkSync(att.file_path)
+        } catch {}
+      }
+    }
+    return journalDb.deleteJournalEntry(id)
+  })
+
   ipcMain.handle('items:list', (_, filters) => itemsDb.listItems(filters))
   ipcMain.handle('items:create', (_, data) => itemsDb.createItem(data))
   ipcMain.handle('items:update', (_, id, changes) => itemsDb.updateItem(id, changes))

@@ -47,6 +47,16 @@ test.describe('Life Stack 2.0 Electron QA & UI Sweep', () => {
     await page.waitForSelector('text=Active Epics', { timeout: 10000 })
     expect(await page.isVisible('text=Active Epics')).toBe(true)
 
+    // Click Calendar view
+    await page.click('button:has-text("Calendar")')
+    await page.waitForTimeout(600)
+    expect(await page.isVisible('text=Gantt Horizons') || await page.isVisible('text=SECTOR TREE')).toBe(true)
+
+    // Click Journal view
+    await page.click('button:has-text("Journal")')
+    await page.waitForTimeout(600)
+    expect(await page.isVisible('text=What are you thinking?') && await page.isVisible('text=Danger Mode')).toBe(true)
+
     // Click Lanes view
     await page.click('button:has-text("Lanes")')
     await page.waitForTimeout(600)
@@ -67,10 +77,17 @@ test.describe('Life Stack 2.0 Electron QA & UI Sweep', () => {
     await page.waitForTimeout(600)
     expect(await page.isVisible('text=General') || await page.isVisible('text=Active Epic Cap')).toBe(true)
 
-    // Return to Life Stack (Overview)
+    // Return to Life Stack (Overview) and test Today | Week toggle
     await page.click('button:has-text("Life Stack")')
     await page.waitForTimeout(600)
     expect(await page.isVisible('text=Active Epics')).toBe(true)
+
+    // Test Today | Week toggle
+    await page.click('div[data-tour="today-panel"] button:has-text("Week")')
+    await page.waitForTimeout(400)
+    expect(await page.isVisible('text=Week') || await page.isVisible('text=tasks')).toBe(true)
+    await page.click('div[data-tour="today-panel"] button:has-text("Today")')
+    await page.waitForTimeout(400)
   })
 
   test('UI Sweep 2: Help & Workflow Guide modal interaction', async () => {

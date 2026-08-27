@@ -138,6 +138,44 @@ export async function upsertChunksForItem(itemId: string): Promise<void> {
   }
 }
 
+export async function upsertChunksForJournalEntry(entryId: string): Promise<void> {
+  const db = getDb()
+  try {
+    const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ?').get(entryId) as { id: string; content: string; created_at: string } | undefined
+    const existingChunks = db.prepare('SELECT vec_rowid FROM memory_chunks WHERE source_id = ?').all(entryId) as { vec_rowid: number }[]
+    if (existingChunks.length > 0) {
+      const deleteVectorsStmt = db.prepare('DELETE FROM chunk_vectors WHERE rowid = ?')
+      const deleteChunksStmt = db.prepare('DELETE FROM memory_chunks WHERE source_id = ?')
+      db.transaction(() => {
+        for (const c of existingChunks) {
+          try { deleteVectorsStmt.run(c.vec_rowid) } catch {}
+        }
+        deleteChunksStmt.run(entryId)
+      })()
+    }
+
+    if (!entry || !entry.content.trim()) return
+
+    const chunks = chunkText(entry.content, 250, 0.2)
+    const now = new Date().toISOString()
+    for (const chunk of chunks) {
+      const embedding = await ollamaClient.embed(chunk, 'document')
+      if (embedding && embedding.length === 768) {
+        const vectorData = new Float32Array(embedding)
+        db.transaction(() => {
+          const vecInsert = db.prepare('INSERT INTO chunk_vectors(embedding) VALUES (?)').run(vectorData)
+          db.prepare(`
+            INSERT INTO memory_chunks (id, vec_rowid, source_type, source_id, content, created_at)
+            VALUES (?, ?, 'journal_entry', ?, ?, ?)
+          `).run(uuid(), vecInsert.lastInsertRowid, entryId, chunk, now)
+        })()
+      }
+    }
+  } catch (err: any) {
+    console.error('[Memory Error - Journal]', err)
+  }
+}
+
 export async function reindexAllVectorMemory(): Promise<{ indexedEpics: number; totalChunks: number }> {
   const db = getDb()
   const items = db.prepare('SELECT id FROM items').all() as { id: string }[]

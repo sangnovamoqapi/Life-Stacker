@@ -280,3 +280,24 @@ This document tracks all foundational architecture, design, and engineering deci
      - Non-seed relation types are not silently coerced; the assistant surfaces a plain conversational query asking the user whether to expand the vocabulary.
      - Self-edges (`from_item_id === to_item_id`) are rejected before creating pending actions or diff cards.
 - **Rationale**: Keeps relational graph structuring safe, auditable, and human-supervised while equipping local models with low-latency name resolution.
+
+## ADR 024: Journal System with Local Attachments, Today/Week Toggle & Calendar/Gantt Horizons (Amendment 20)
+- **Status**: Implemented
+- **Date**: 2026-08-28
+- **Decision**:
+  1. **Zero-AI Journal Architecture**:
+     - Dedicated `journal_entries` and `journal_attachments` SQLite tables for human reflections, notes, and media attachments.
+     - Strictly no AI copilot, suggestions, or reflection buttons anywhere on the Journal screen (`JournalView.tsx`).
+     - Selected attachments are copied into `userData/journal-attachments/` with UUID-prefixed filenames and served safely via the `media://` custom protocol (supporting range requests and streaming for `.mp3`, `.wav`, `.ogg`, `.m4a`, `.mp4`, `.webm`, `.mov`, and images).
+     - Fire-and-forget vector memory chunk insertion (`source_type: 'journal_entry'`) on save without blocking UI operations.
+  2. **Read-Only Chat Tool `journal_query`**:
+     - Registered `journal_query(startDate, endDate)` in `TOOLS_SCHEMA` as a read-only query tool with no review diff cards (same tier as `memory_search`).
+     - Enables conversational models to summarize or answer questions about personal reflections across date intervals.
+  3. **Today / Week Segmented Switch**:
+     - Investigated and confirmed `status` on `next_items` (`'today' | 'next' | 'done'`) as the single source of truth for Today's focus.
+     - Added a segmented **Today | Week** toggle to the bottom-right panel of `OverviewView.tsx` without screen jumping.
+     - In Week mode, aggregates items flagged `today` alongside non-completed actions scheduled with `due_date` inside the current week (Monday–Sunday), grouped under day-of-week headers.
+  4. **Calendar & Active Epic Gantt View**:
+     - Built `CalendarView.tsx` displaying an interactive monthly action grid plotting `next_items` by `due_date`.
+     - Placed horizontal Gantt planning bars beneath the grid for all Active Epics, directly reusing the `calculateEpicPace` engine (`src/renderer/src/utils/pace.ts`) to render elapsed horizon percentage, execution progress, and velocity badges.
+- **Rationale**: Separates pure, private human journaling from AI generation while enhancing scheduling visibility and temporal horizon management.

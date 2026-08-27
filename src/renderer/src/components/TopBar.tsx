@@ -118,9 +118,19 @@ export const TopBar: React.FC = () => {
 
         {/* View Switcher Pill Segment */}
         <div className="flex bg-surface-subtle p-1 rounded-lg border border-border-subtle gap-0.5">
-          {(['overview', 'lanes', 'chat', 'stats'] as const).map(mode => {
+          {(['overview', 'lanes', 'calendar', 'journal', 'chat', 'stats'] as const).map(mode => {
             const isActive = viewMode === mode
-            const label = mode === 'overview' ? 'Life Stack' : mode === 'lanes' ? 'Lanes' : mode === 'chat' ? '✦ Chat' : 'Stats'
+            const label = mode === 'overview' 
+              ? 'Life Stack' 
+              : mode === 'lanes' 
+              ? 'Lanes' 
+              : mode === 'calendar'
+              ? 'Calendar'
+              : mode === 'journal'
+              ? 'Journal'
+              : mode === 'chat' 
+              ? '✦ Chat' 
+              : 'Stats'
             return (
               <button
                 key={mode}

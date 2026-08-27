@@ -52,7 +52,7 @@ export type {
   PendingActionStatus,
 }
 
-export type ViewMode = 'lanes' | 'overview' | 'settings' | 'stats' | 'chat'
+export type ViewMode = 'lanes' | 'overview' | 'settings' | 'stats' | 'chat' | 'journal' | 'calendar'
 export type ModalType = 'item' | 'sector' | null
 export type TabType = 'details' | 'history' | 'effort'
 
