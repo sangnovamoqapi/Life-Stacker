@@ -537,42 +537,42 @@ export const ItemModal: React.FC = () => {
 
   const statusStyles: Record<ItemStatus, { active: string; inactive: string }> = {
     active: {
-      active: 'bg-blue-500/20 text-blue-300 border-blue-500/60 shadow-[0_0_12px_rgba(59,130,246,0.3)] font-bold',
-      inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08] hover:border-blue-500/40 hover:text-slate-200'
+      active: 'bg-accent text-white border-accent font-bold shadow-xs',
+      inactive: 'bg-surface-subtle text-text-secondary border-border-subtle hover:border-accent hover:text-text-primary'
     },
     paused: {
-      active: 'bg-amber-500/20 text-amber-300 border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.3)] font-bold',
-      inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08] hover:border-amber-500/40 hover:text-slate-200'
+      active: 'bg-[#b88628] text-white border-[#b88628] font-bold shadow-xs',
+      inactive: 'bg-surface-subtle text-text-secondary border-border-subtle hover:border-[#b88628] hover:text-text-primary'
     },
     blocked: {
-      active: 'bg-red-500/20 text-red-300 border-red-500/60 shadow-[0_0_12px_rgba(239,68,68,0.3)] font-bold',
-      inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08] hover:border-red-500/40 hover:text-slate-200'
+      active: 'bg-blocked text-white border-blocked font-bold shadow-xs',
+      inactive: 'bg-surface-subtle text-text-secondary border-border-subtle hover:border-blocked hover:text-text-primary'
     },
     done: {
-      active: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-[0_0_12px_rgba(168,185,129,0.3)] font-bold',
-      inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08] hover:border-emerald-500/40 hover:text-slate-200'
+      active: 'bg-done text-white border-done font-bold shadow-xs',
+      inactive: 'bg-surface-subtle text-text-secondary border-border-subtle hover:border-done hover:text-text-primary'
     },
     queued: {
-      active: 'bg-slate-500/20 text-slate-300 border-slate-500/60 font-bold',
-      inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08]'
+      active: 'bg-surface-subtle text-text-primary border-border-strong font-bold',
+      inactive: 'bg-surface-subtle text-text-muted border-border-subtle'
     },
     parked: {
-      active: 'bg-purple-500/20 text-purple-300 border-purple-500/60 shadow-[0_0_12px_rgba(168,85,247,0.3)] font-bold',
-      inactive: 'bg-white/[0.04] text-slate-400 border-white/[0.08] hover:border-purple-500/40 hover:text-slate-200'
+      active: 'bg-purple-600 text-white border-purple-600 font-bold shadow-xs',
+      inactive: 'bg-surface-subtle text-text-secondary border-border-subtle hover:border-purple-500 hover:text-text-primary'
     }
   }
 
   return (
     <div 
-      className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
       onClick={closeModal}
     >
       <div 
-        className="bg-[#0f141f]/95 border border-white/[0.12] w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[94vh] overflow-hidden"
+        className="bg-surface-modal border border-border-subtle w-full max-w-4xl rounded-2xl shadow-modal flex flex-col max-h-[94vh] overflow-hidden text-text-primary"
         onClick={e => e.stopPropagation()}
       >
         {/* Header Tabs */}
-        <div className="flex items-center justify-between border-b border-white/[0.08] px-6 pt-4 pb-0 bg-white/[0.02]">
+        <div className="flex items-center justify-between border-b border-border-subtle px-6 pt-4 pb-0 bg-surface-subtle">
           <div className="flex gap-6">
             {(['details', 'history', 'effort'] as const).map(t => (
               <button
@@ -581,8 +581,8 @@ export const ItemModal: React.FC = () => {
                 disabled={isNew && t !== 'details'}
                 className={`pb-3 text-sm font-semibold capitalize border-b-2 transition-all ${
                   activeTab === t 
-                    ? 'border-blue-500 text-blue-400' 
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'border-accent text-accent' 
+                    : 'border-transparent text-text-muted hover:text-text-primary'
                 } ${isNew && t !== 'details' ? 'opacity-30 cursor-not-allowed' : ''}`}
               >
                 {t}
@@ -591,7 +591,7 @@ export const ItemModal: React.FC = () => {
           </div>
           <button 
             onClick={closeModal} 
-            className="text-slate-400 hover:text-slate-100 pb-3 text-lg leading-none transition-colors"
+            className="text-text-muted hover:text-text-primary pb-3 text-lg leading-none transition-colors"
           >
             ✕
           </button>
@@ -608,7 +608,7 @@ export const ItemModal: React.FC = () => {
                   value={title}
                   onChange={e => setTitle(e.target.value)}
                   placeholder="Epic title..."
-                  className="w-full bg-transparent font-sans text-2xl font-bold text-slate-100 outline-none placeholder:text-slate-600 tracking-tight"
+                  className="w-full bg-transparent font-sans text-2xl font-bold text-text-primary outline-none placeholder:text-text-muted tracking-tight"
                   autoFocus
                 />
               </div>
@@ -617,19 +617,19 @@ export const ItemModal: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Sector */}
                 <div>
-                  <label className="block text-xs font-mono text-slate-400 mb-1.5">Sector</label>
+                  <label className="block text-xs font-mono text-text-muted mb-1.5">Sector</label>
                   <div className="relative">
                     <select
                       value={sectorId}
                       onChange={e => setSectorId(e.target.value)}
-                      className="w-full bg-[#121622] border border-white/[0.10] rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-blue-500 cursor-pointer appearance-none"
+                      className="w-full bg-surface-input border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-primary outline-none focus:border-accent cursor-pointer appearance-none"
                     >
                       <option value="" disabled>Select sector...</option>
                       {sectors.map(s => (
                         <option key={s.id} value={s.id}>{s.icon ? `${s.icon} ` : ''}{s.name}</option>
                       ))}
                     </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 text-xs">
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-text-muted text-xs">
                       ▼
                     </div>
                   </div>
@@ -1441,24 +1441,24 @@ export const ItemModal: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/[0.08] flex justify-between items-center bg-black/40">
+        <div className="p-4 border-t border-border-subtle flex justify-between items-center bg-surface-raised">
           <div>
             {!isNew && (
               <>
                 {showDeleteConfirm ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-red-400">Delete this epic?</span>
+                    <span className="text-xs text-blocked">Delete this epic?</span>
                     <button
                       type="button"
                       onClick={handleDelete}
-                      className="px-2.5 py-1 text-xs bg-red-500 text-white font-semibold rounded hover:bg-red-600 transition-colors"
+                      className="px-2.5 py-1 text-xs bg-blocked text-white font-semibold rounded-lg hover:opacity-90 transition-opacity"
                     >
                       Yes, Delete
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowDeleteConfirm(false)}
-                      className="px-2.5 py-1 text-xs text-slate-400 hover:text-slate-200"
+                      className="px-2.5 py-1 text-xs text-text-muted hover:text-text-primary"
                     >
                       Cancel
                     </button>
@@ -1467,7 +1467,7 @@ export const ItemModal: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    className="text-xs text-blocked hover:opacity-80 transition-opacity"
                   >
                     Delete Epic
                   </button>
@@ -1480,14 +1480,14 @@ export const ItemModal: React.FC = () => {
             <button
               type="button"
               onClick={closeModal}
-              className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] rounded-xl transition-all"
+              className="px-4 py-2 text-xs font-semibold text-text-muted hover:text-text-primary hover:bg-surface-subtle rounded-lg transition-all"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="px-5 py-2 text-xs font-bold text-slate-900 bg-gradient-to-r from-blue-400 to-indigo-400 hover:from-blue-300 hover:to-indigo-300 rounded-xl shadow-lg transition-all"
+              className="px-5 py-2 text-xs font-bold text-white bg-accent hover:bg-accent-hover rounded-lg shadow-soft transition-all"
             >
               {isNew ? 'Create Epic' : 'Save Changes'}
             </button>

@@ -37,23 +37,23 @@ export const ParkSwapModal: React.FC<ParkSwapModalProps> = ({
   const activeCap = settings.active_epic_cap ?? settings.focus_limit ?? 5
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-fade-in">
       <div 
-        className="w-full max-w-lg modal-glass rounded-2xl border border-white/[0.12] shadow-2xl p-6 flex flex-col gap-5 text-slate-100"
+        className="w-full max-w-lg bg-surface-modal rounded-2xl border border-border-subtle shadow-modal p-6 flex flex-col gap-5 text-text-primary"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-white/[0.08] pb-4">
+        <div className="flex items-start justify-between border-b border-border-subtle pb-4">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xl">🅿️</span>
-              <h2 className="font-sans text-lg font-bold text-slate-100">
+              <h2 className="font-sans text-lg font-bold text-text-primary">
                 Active Epic Cap Reached ({activeItems.length} / {activeCap})
               </h2>
             </div>
-            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              You have reached your limit of <strong className="text-amber-400">{activeCap} active epics</strong>. 
-              To activate <strong className="text-slate-100">"{targetEpicTitle}"</strong>, choose an active epic to park in exchange:
+            <p className="text-xs text-text-secondary mt-1 leading-relaxed">
+              You have reached your limit of <strong className="text-accent">{activeCap} active epics</strong>. 
+              To activate <strong className="text-text-primary">"{targetEpicTitle}"</strong>, choose an active epic to park in exchange:
             </p>
           </div>
         </div>
@@ -63,7 +63,7 @@ export const ParkSwapModal: React.FC<ParkSwapModalProps> = ({
           {activeItems.map(item => {
             const sec = getSector(item.sector_id)
             const isSelected = selectedParkId === item.id
-            const secColor = sec ? `var(--color-${sec.color})` : '#3b82f6'
+            const secColor = sec ? `var(--color-${sec.color})` : 'var(--accent)'
 
             return (
               <div
@@ -71,8 +71,8 @@ export const ParkSwapModal: React.FC<ParkSwapModalProps> = ({
                 onClick={() => setSelectedParkId(item.id)}
                 className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-amber-500/15 border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                    : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.12]'
+                    ? 'bg-purple-500/15 border-purple-500/60 shadow-xs'
+                    : 'bg-surface-subtle border-border-subtle hover:bg-surface-raised'
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0 pr-2">
@@ -81,24 +81,24 @@ export const ParkSwapModal: React.FC<ParkSwapModalProps> = ({
                     name="epicToPark"
                     checked={isSelected}
                     onChange={() => setSelectedParkId(item.id)}
-                    className="accent-amber-400 shrink-0 cursor-pointer"
+                    className="accent-purple-500 shrink-0 cursor-pointer"
                   />
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-mono text-slate-400">#{item.priority_rank}</span>
+                      <span className="text-[10px] font-mono text-text-muted">#{item.priority_rank}</span>
                       <span className="text-xs font-mono font-semibold" style={{ color: secColor }}>
                         {sec?.icon} {sec?.name}
                       </span>
                     </div>
-                    <div className="text-sm font-semibold text-slate-100 truncate mt-0.5">
+                    <div className="text-sm font-semibold text-text-primary truncate mt-0.5">
                       {item.title}
                     </div>
                   </div>
                 </div>
 
                 <div className="text-right shrink-0">
-                  <span className="text-xs font-mono font-medium text-slate-400 bg-white/[0.06] px-2 py-0.5 rounded-full border border-white/[0.08]">
-                    Park this
+                  <span className="text-xs font-mono font-medium text-text-muted bg-surface-card px-2 py-0.5 rounded-full border border-border-subtle">
+                    {item.progress}% done
                   </span>
                 </div>
               </div>
@@ -107,23 +107,22 @@ export const ParkSwapModal: React.FC<ParkSwapModalProps> = ({
         </div>
 
         {/* Footer actions */}
-        <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/[0.08]">
+        <div className="flex justify-end items-center gap-2 pt-2 border-t border-border-subtle">
           <button
             type="button"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] rounded-xl transition-all cursor-pointer"
+            className="px-4 py-1.5 text-xs text-text-muted hover:text-text-primary transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={!selectedParkId || isSubmitting}
-            className="px-5 py-2 text-xs font-bold text-slate-900 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 disabled:opacity-50 rounded-xl shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
+            disabled={isSubmitting || !selectedParkId}
+            className="px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-lg shadow-soft transition-all cursor-pointer disabled:opacity-50"
           >
-            <span>⇄</span>
-            <span>{isSubmitting ? 'Swapping...' : 'Swap & Activate'}</span>
+            {isSubmitting ? 'Swapping...' : 'Park Selected & Activate'}
           </button>
         </div>
       </div>

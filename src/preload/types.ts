@@ -267,6 +267,7 @@ export interface AppSettings {
   has_seen_onboarding?: boolean
   feature_interactive_tour?: boolean
   has_completed_tour?: boolean
+  theme_mode?: 'dark' | 'light'
 }
 
 // ──────────────────────────── Chat & Pending Actions ────────────────────────────

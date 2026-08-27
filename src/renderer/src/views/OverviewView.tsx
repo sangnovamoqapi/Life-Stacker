@@ -110,8 +110,6 @@ export const OverviewView: React.FC = () => {
     })
 
     // Sort by due-date-then-effort:
-    // 1. Items with due dates (earliest first)
-    // 2. Items without due dates, sorted by time estimate (smallest first)
     return list.sort((a, b) => {
       if (a.due_date && b.due_date) {
         return new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
@@ -149,18 +147,16 @@ export const OverviewView: React.FC = () => {
 
   const handleConfirmBump = async (bumpItemId: string) => {
     if (!targetNextItemToPromote) return
-    const bumpedItem = todayItems.find(i => i.id === bumpItemId)
-    
     await demoteFromToday(bumpItemId)
     await promoteToToday(targetNextItemToPromote.id)
-    
-    showToast(`Bumping: "${targetNextItemToPromote.title}" moved to Today, "${bumpedItem?.title || 'Item'}" back to Next`, 'info')
+    showToast(`Swapped: "${targetNextItemToPromote.title}" in, bumped previous item to Next`, 'success')
     setTargetNextItemToPromote(null)
   }
 
   const handleToggleTodayDone = async (item: NextItem) => {
     const toggled = await toggleNextItem(item.id)
     if (toggled.status === 'done') {
+      showToast(`Completed "${item.title}"!`, 'success')
       setChecklistEffortPrompt({
         itemId: item.epic_id,
         checklistItem: {
@@ -171,32 +167,35 @@ export const OverviewView: React.FC = () => {
           effortUnit: (item.time_estimate_unit as any) || undefined
         }
       })
-      showToast(`Completed: "${item.title}"`, 'success')
     }
   }
 
-  // Drag-to-reorder within Today panel
+  // ─── Drag and Drop Handlers for Today Panel ───
   const handleTodayDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('text/plain', id)
     setDraggedTodayId(id)
-    e.dataTransfer.effectAllowed = 'move'
   }
 
   const handleTodayDragOver = (e: React.DragEvent, id: string) => {
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (id !== draggedTodayId) setDragOverTodayId(id)
+    if (dragOverTodayId !== id) {
+      setDragOverTodayId(id)
+    }
   }
 
   const handleTodayDrop = async (e: React.DragEvent, targetId: string) => {
     e.preventDefault()
-    if (!draggedTodayId || draggedTodayId === targetId) return
+    const sourceId = e.dataTransfer.getData('text/plain') || draggedTodayId
+    if (!sourceId || sourceId === targetId) {
+      setDraggedTodayId(null)
+      setDragOverTodayId(null)
+      return
+    }
 
-    const currentIds = todayItems.map(i => i.id)
-    const fromIdx = currentIds.indexOf(draggedTodayId)
-    const toIdx = currentIds.indexOf(targetId)
-
+    const fromIdx = todayItems.findIndex(i => i.id === sourceId)
+    const toIdx = todayItems.findIndex(i => i.id === targetId)
     if (fromIdx !== -1 && toIdx !== -1) {
-      const reordered = [...currentIds]
+      const reordered = [...todayItems]
       const [moved] = reordered.splice(fromIdx, 1)
       reordered.splice(toIdx, 0, moved)
 
@@ -221,24 +220,24 @@ export const OverviewView: React.FC = () => {
         {/* ═══════════════════════════════════════════════════════════════════
             1. TOP-LEFT: EPICS PANEL
            ═══════════════════════════════════════════════════════════════════ */}
-        <div className={`lane-glass rounded-2xl p-4 flex flex-col border border-white/[0.08] shadow-lg transition-all ${
+        <div className={`lane-glass rounded-xl p-4 flex flex-col transition-all ${
           collapsedPanels.epics ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
         }`}>
-          <div className="flex items-center justify-between pb-3 border-b border-white/[0.06] shrink-0">
+          <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-base">⚡</span>
-              <h2 className="font-sans font-bold text-slate-100 text-sm">Active Epics</h2>
-              <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/15 px-2 py-0.5 rounded-full border border-blue-500/25">
+              <h2 className="font-sans font-bold text-text-primary text-sm">Active Epics</h2>
+              <span className="text-xs font-mono font-bold text-accent bg-accent-subtle px-2 py-0.5 rounded-full border border-accent/25">
                 {activeEpics.length} / {activeCap}
               </span>
             </div>
             
             <div className="flex items-center gap-3">
-              <span className="text-[11px] font-mono text-slate-400">Ranked by Priority</span>
+              <span className="text-[11px] font-mono text-text-muted">Ranked by Priority</span>
               <button
                 type="button"
                 onClick={() => togglePanelCollapse('epics')}
-                className="text-xs text-slate-400 hover:text-slate-200 bg-white/[0.04] hover:bg-white/[0.08] px-1.5 py-0.5 rounded border border-white/[0.06] transition-colors cursor-pointer"
+                className="text-xs text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
                 title={collapsedPanels.epics ? 'Expand panel' : 'Collapse panel'}
               >
                 {collapsedPanels.epics ? '＋' : '−'}
@@ -250,7 +249,7 @@ export const OverviewView: React.FC = () => {
             <div className="flex-1 overflow-y-auto pt-3 space-y-2.5 pr-1">
               {activeEpics.map(epic => {
                 const sec = getSector(epic.sector_id)
-                const secColor = sec ? `var(--color-${sec.color})` : '#3b82f6'
+                const secColor = sec ? `var(--color-${sec.color})` : 'var(--accent)'
                 const researchProg = getResearchProgress(epic.id)
                 const executionProg = getExecutionProgress(epic.id)
                 const stage = getEpicStage(epic.id)
@@ -259,37 +258,37 @@ export const OverviewView: React.FC = () => {
                   <div
                     key={epic.id}
                     onClick={() => openItemModal(epic.id)}
-                    className="card-dominant cursor-pointer transition-all hover:scale-[1.01] p-3 rounded-xl"
+                    className="card-dominant cursor-pointer transition-all hover:scale-[1.005] p-3 rounded-lg"
                     style={{ borderLeft: `3px solid ${secColor}` }}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xs font-mono font-bold text-amber-400">#{epic.priority_rank}</span>
-                        <span className="text-xs font-semibold text-slate-200 truncate">{epic.title}</span>
+                        <span className="text-xs font-mono font-bold text-accent">#{epic.priority_rank}</span>
+                        <span className="text-xs font-semibold text-text-primary truncate">{epic.title}</span>
                       </div>
 
-                      <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-slate-300 border border-white/[0.10] shrink-0 font-semibold">
+                      <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-surface-subtle text-text-secondary border border-border-subtle shrink-0 font-semibold">
                         {stage.label}
                       </span>
                     </div>
 
                     {/* Dual Stacked Progress Bars */}
-                    <div className="space-y-1 my-2 bg-black/20 p-2 rounded-lg border border-white/[0.04]">
-                      <div className="flex items-center justify-between text-[9px] font-mono text-slate-400">
-                        <span className="text-purple-300">🔬 Research {researchProg}%</span>
-                        <span className="text-emerald-300">⚡ Execution {executionProg}%</span>
+                    <div className="space-y-1 my-2 bg-surface-subtle p-2 rounded-lg border border-border-subtle">
+                      <div className="flex items-center justify-between text-[9px] font-mono text-text-muted">
+                        <span className="text-purple-400">🔬 Research {researchProg}%</span>
+                        <span className="text-emerald-500">⚡ Execution {executionProg}%</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="h-1 bg-white/[0.08] rounded-full overflow-hidden">
-                          <div className="h-full bg-purple-400 rounded-full transition-all" style={{ width: `${researchProg}%` }} />
+                        <div className="h-1 bg-surface-raised rounded-full overflow-hidden">
+                          <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${researchProg}%` }} />
                         </div>
-                        <div className="h-1 bg-white/[0.08] rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${executionProg}%` }} />
+                        <div className="h-1 bg-surface-raised rounded-full overflow-hidden">
+                          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${executionProg}%` }} />
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-text-muted">
                       <span style={{ color: secColor }}>{sec?.icon} {sec?.name}</span>
                       <span>{formatDaysAgo(epic.updated_at)}</span>
                     </div>
@@ -298,7 +297,7 @@ export const OverviewView: React.FC = () => {
               })}
 
               {activeEpics.length === 0 && (
-                <div className="text-center py-12 text-slate-500 text-xs font-mono italic">
+                <div className="text-center py-12 text-text-muted text-xs font-mono italic">
                   No active epics. Activate epics in the Sectors page.
                 </div>
               )}
@@ -309,24 +308,24 @@ export const OverviewView: React.FC = () => {
         {/* ═══════════════════════════════════════════════════════════════════
             2. TOP-RIGHT: EXPLORE PANEL (Staleness Sort)
            ═══════════════════════════════════════════════════════════════════ */}
-        <div data-tour="explore-panel" className={`lane-glass rounded-2xl p-4 flex flex-col border border-purple-500/20 shadow-lg transition-all ${
+        <div data-tour="explore-panel" className={`lane-glass rounded-xl p-4 flex flex-col transition-all ${
           collapsedPanels.explore ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
         }`}>
-          <div className="flex items-center justify-between pb-3 border-b border-purple-500/15 shrink-0">
+          <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-base">🔬</span>
-              <h2 className="font-sans font-bold text-purple-200 text-sm">Explore Research</h2>
-              <span className="text-xs font-mono font-bold text-purple-300 bg-purple-500/15 px-2 py-0.5 rounded-full border border-purple-500/25">
+              <h2 className="font-sans font-bold text-purple-400 text-sm">Explore Research</h2>
+              <span className="text-xs font-mono font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/25">
                 {activeExploreItems.length} Open
               </span>
             </div>
             
             <div className="flex items-center gap-3">
-              <span className="text-[11px] font-mono text-purple-400">Oldest-Touched First</span>
+              <span className="text-[11px] font-mono text-text-muted">Oldest-Touched First</span>
               <button
                 type="button"
                 onClick={() => togglePanelCollapse('explore')}
-                className="text-xs text-purple-400 hover:text-purple-200 bg-purple-500/10 hover:bg-purple-500/20 px-1.5 py-0.5 rounded border border-purple-500/20 transition-colors cursor-pointer"
+                className="text-xs text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
                 title={collapsedPanels.explore ? 'Expand panel' : 'Collapse panel'}
               >
                 {collapsedPanels.explore ? '＋' : '−'}
@@ -339,40 +338,40 @@ export const OverviewView: React.FC = () => {
               {activeExploreItems.map(exp => {
                 const parentEpic = getEpic(exp.epic_id)
                 const parentSector = getSector(parentEpic?.sector_id || '')
-                const sectorColor = parentSector ? `var(--color-${parentSector.color})` : '#3b82f6'
+                const sectorColor = parentSector ? `var(--color-${parentSector.color})` : 'var(--accent)'
                 const daysUntouched = daysSince(exp.last_touched_at)
 
                 return (
                   <div
                     key={exp.id}
                     onClick={() => openItemModal(exp.epic_id)}
-                    className="p-3 rounded-xl bg-white/[0.03] border border-purple-500/20 hover:border-purple-500/40 hover:bg-purple-950/20 transition-all cursor-pointer shadow-sm"
+                    className="p-3 rounded-lg bg-surface-card border border-border-subtle hover:border-purple-500/40 hover:bg-surface-card-hover transition-all cursor-pointer shadow-soft"
                   >
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 mb-0.5">
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-text-muted mb-0.5">
                           <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
                         </div>
-                        <h4 className="text-xs font-bold text-slate-100 truncate">
+                        <h4 className="text-xs font-bold text-text-primary truncate">
                           {exp.title || exp.notes.split('\n')[0] || 'Explore Topic'}
                         </h4>
                       </div>
 
                       {exp.time_estimate_value && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-subtle text-purple-400 border border-purple-500/30 shrink-0">
                           ⏱ {formatEffortBadge(exp.time_estimate_value, (exp.time_estimate_unit as any) || 'hours')}
                         </span>
                       )}
                     </div>
 
                     {exp.notes && (
-                      <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed mt-1">
+                      <p className="text-[11px] text-text-secondary line-clamp-2 leading-relaxed mt-1">
                         {exp.notes}
                       </p>
                     )}
 
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mt-2 pt-1.5 border-t border-white/[0.04]">
-                      <span className={daysUntouched >= 7 ? 'text-amber-400 font-semibold' : ''}>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-text-muted mt-2 pt-1.5 border-t border-border-subtle">
+                      <span className={daysUntouched >= 7 ? 'text-accent font-semibold' : ''}>
                         Untouched for {daysUntouched === 0 ? 'today' : `${daysUntouched}d`}
                       </span>
                       <span className="text-purple-400">Click to expand finding →</span>
@@ -382,7 +381,7 @@ export const OverviewView: React.FC = () => {
               })}
 
               {activeExploreItems.length === 0 && (
-                <div className="text-center py-12 text-slate-500 text-xs font-mono italic">
+                <div className="text-center py-12 text-text-muted text-xs font-mono italic">
                   No open research topics across your active epics.
                 </div>
               )}
@@ -393,24 +392,24 @@ export const OverviewView: React.FC = () => {
         {/* ═══════════════════════════════════════════════════════════════════
             3. BOTTOM-LEFT: NEXT ACTIONS PANEL (Due Date & Effort Sort)
            ═══════════════════════════════════════════════════════════════════ */}
-        <div className={`lane-glass rounded-2xl p-4 flex flex-col border border-amber-500/20 shadow-lg transition-all ${
+        <div className={`lane-glass rounded-xl p-4 flex flex-col transition-all ${
           collapsedPanels.next ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
         }`}>
-          <div className="flex items-center justify-between pb-3 border-b border-amber-500/15 shrink-0">
+          <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-base">⚡</span>
-              <h2 className="font-sans font-bold text-amber-200 text-sm">Next Backlog</h2>
-              <span className="text-xs font-mono font-bold text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-500/25">
+              <h2 className="font-sans font-bold text-text-primary text-sm">Next Backlog</h2>
+              <span className="text-xs font-mono font-bold text-accent bg-accent-subtle px-2 py-0.5 rounded-full border border-accent/25">
                 {activeNextItems.length} Open
               </span>
             </div>
             
             <div className="flex items-center gap-3">
-              <span className="text-[11px] font-mono text-amber-400">Due-Date & Effort Sort</span>
+              <span className="text-[11px] font-mono text-text-muted">Due-Date & Effort Sort</span>
               <button
                 type="button"
                 onClick={() => togglePanelCollapse('next')}
-                className="text-xs text-amber-400 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/20 transition-colors cursor-pointer"
+                className="text-xs text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
                 title={collapsedPanels.next ? 'Expand panel' : 'Collapse panel'}
               >
                 {collapsedPanels.next ? '＋' : '−'}
@@ -423,26 +422,26 @@ export const OverviewView: React.FC = () => {
               {activeNextItems.map(nextItem => {
                 const parentEpic = getEpic(nextItem.epic_id)
                 const parentSector = getSector(parentEpic?.sector_id || '')
-                const sectorColor = parentSector ? `var(--color-${parentSector.color})` : '#3b82f6'
+                const sectorColor = parentSector ? `var(--color-${parentSector.color})` : 'var(--accent)'
 
                 return (
                   <div
                     key={nextItem.id}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-amber-500/30 transition-all gap-2"
+                    className="flex items-center justify-between p-2.5 rounded-lg bg-surface-card border border-border-subtle hover:border-accent/30 transition-all gap-2 shadow-soft"
                   >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <button
                         type="button"
                         onClick={() => handleToggleTodayDone(nextItem)}
-                        className="w-4 h-4 rounded-full border-2 border-amber-400/70 hover:border-amber-300 hover:bg-amber-400/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                        className="w-4 h-4 rounded-full border-2 border-accent hover:bg-accent/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
                         title="Complete task"
                       />
 
                       <div className="min-w-0 flex-1">
-                        <span className="text-xs font-semibold text-slate-100 block truncate">
+                        <span className="text-xs font-semibold text-text-primary block truncate">
                           {nextItem.title}
                         </span>
-                        <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                        <span className="text-[10px] font-mono text-text-muted flex items-center gap-1 mt-0.5 truncate">
                           <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
                         </span>
                       </div>
@@ -450,7 +449,7 @@ export const OverviewView: React.FC = () => {
 
                     <div className="flex items-center gap-2 shrink-0">
                       {nextItem.time_estimate_value && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-surface-subtle text-text-secondary border border-border-subtle">
                           ⏱ {formatEffortBadge(nextItem.time_estimate_value, (nextItem.time_estimate_unit as any) || 'hours')}
                         </span>
                       )}
@@ -458,7 +457,7 @@ export const OverviewView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handlePromoteClick(nextItem)}
-                        className="px-2.5 py-1 text-xs font-mono font-bold text-slate-900 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 rounded-lg shadow-sm transition-all cursor-pointer flex items-center gap-1"
+                        className="px-2.5 py-1 text-xs font-mono font-bold text-white bg-accent hover:bg-accent-hover rounded-lg shadow-soft transition-all cursor-pointer flex items-center gap-1"
                         title="Promote to Today Focus"
                       >
                         <span>⭐ Today</span>
@@ -469,7 +468,7 @@ export const OverviewView: React.FC = () => {
               })}
 
               {activeNextItems.length === 0 && (
-                <div className="text-center py-12 text-slate-500 text-xs font-mono italic">
+                <div className="text-center py-12 text-text-muted text-xs font-mono italic">
                   No open next items. Spawn from explore research or add to epics.
                 </div>
               )}
@@ -480,24 +479,24 @@ export const OverviewView: React.FC = () => {
         {/* ═══════════════════════════════════════════════════════════════════
             4. BOTTOM-RIGHT: TODAY PANEL (Governed by today_cap)
            ═══════════════════════════════════════════════════════════════════ */}
-        <div data-tour="today-panel" className={`lane-glass rounded-2xl p-4 flex flex-col border border-amber-400/30 shadow-lg bg-amber-950/[0.08] transition-all ${
+        <div data-tour="today-panel" className={`lane-glass rounded-xl p-4 flex flex-col transition-all ${
           collapsedPanels.today ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
         }`}>
-          <div className="flex items-center justify-between pb-3 border-b border-amber-400/20 shrink-0">
+          <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-base">🎯</span>
-              <h2 className="font-sans font-bold text-amber-200 text-sm">Today's Focus</h2>
-              <span className="text-xs font-mono font-bold text-amber-300 bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-400/30">
+              <h2 className="font-sans font-bold text-text-primary text-sm">Today's Focus</h2>
+              <span className="text-xs font-mono font-bold text-accent bg-accent-subtle px-2 py-0.5 rounded-full border border-accent/30">
                 {todayItems.length} / {todayCap}
               </span>
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-[11px] font-mono text-slate-400">Drag to Reorder</span>
+              <span className="text-[11px] font-mono text-text-muted">Drag to Reorder</span>
               <button
                 type="button"
                 onClick={() => togglePanelCollapse('today')}
-                className="text-xs text-amber-400 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/20 transition-colors cursor-pointer"
+                className="text-xs text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
                 title={collapsedPanels.today ? 'Expand panel' : 'Collapse panel'}
               >
                 {collapsedPanels.today ? '＋' : '−'}
@@ -510,7 +509,7 @@ export const OverviewView: React.FC = () => {
               {todayItems.map(item => {
                 const parentEpic = getEpic(item.epic_id)
                 const parentSector = getSector(parentEpic?.sector_id || '')
-                const sectorColor = parentSector ? `var(--color-${parentSector.color})` : '#3b82f6'
+                const sectorColor = parentSector ? `var(--color-${parentSector.color})` : 'var(--accent)'
                 const isDragging = draggedTodayId === item.id
                 const isDragOver = dragOverTodayId === item.id
 
@@ -522,27 +521,27 @@ export const OverviewView: React.FC = () => {
                     onDragOver={(e) => handleTodayDragOver(e, item.id)}
                     onDrop={(e) => handleTodayDrop(e, item.id)}
                     onDragEnd={handleTodayDragEnd}
-                    className={`flex items-center justify-between p-3 rounded-xl transition-all gap-3 cursor-grab active:cursor-grabbing ${
+                    className={`flex items-center justify-between p-3 rounded-lg transition-all gap-3 cursor-grab active:cursor-grabbing ${
                       isDragging ? 'opacity-40 scale-95' : ''
                     } ${
-                      isDragOver ? 'border-t-2 border-amber-400 bg-amber-500/20' : 'bg-amber-500/[0.12] border border-amber-400/30 hover:border-amber-400 shadow-md'
+                      isDragOver ? 'border-t-2 border-accent bg-surface-raised' : 'bg-surface-card border border-border-subtle hover:border-accent/40 shadow-soft'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <span className="text-slate-500 select-none text-xs">⠿</span>
+                      <span className="text-text-muted select-none text-xs">⠿</span>
 
                       <button
                         type="button"
                         onClick={() => handleToggleTodayDone(item)}
-                        className="w-5 h-5 rounded-full border-2 border-amber-400 bg-amber-400/20 hover:bg-amber-400/40 text-black flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                        className="w-5 h-5 rounded-full border-2 border-accent bg-accent/20 hover:bg-accent/40 flex items-center justify-center shrink-0 transition-all cursor-pointer"
                         title="Complete today's task"
                       />
 
                       <div className="min-w-0 flex-1">
-                        <span className="text-xs font-bold text-slate-100 block truncate">
+                        <span className="text-xs font-bold text-text-primary block truncate">
                           {item.title}
                         </span>
-                        <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                        <span className="text-[10px] font-mono text-text-muted flex items-center gap-1 mt-0.5 truncate">
                           <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
                         </span>
                       </div>
@@ -550,7 +549,7 @@ export const OverviewView: React.FC = () => {
 
                     <div className="flex items-center gap-2 shrink-0">
                       {item.time_estimate_value && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-500/30">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-subtle text-text-secondary border border-border-subtle">
                           ⏱ {formatEffortBadge(item.time_estimate_value, (item.time_estimate_unit as any) || 'hours')}
                         </span>
                       )}
@@ -558,7 +557,7 @@ export const OverviewView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => demoteFromToday(item.id)}
-                        className="text-[10px] font-mono text-slate-400 hover:text-slate-200 bg-white/[0.06] hover:bg-white/[0.12] px-2 py-1 rounded-md border border-white/[0.08] transition-colors cursor-pointer"
+                        className="text-[10px] font-mono text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-2 py-1 rounded-md border border-border-subtle transition-colors cursor-pointer"
                         title="Return to Next backlog"
                       >
                         ↩
@@ -569,7 +568,7 @@ export const OverviewView: React.FC = () => {
               })}
 
               {todayItems.length === 0 && (
-                <div className="text-center py-12 text-slate-500 text-xs font-mono italic">
+                <div className="text-center py-12 text-text-muted text-xs font-mono italic">
                   Nothing committed for today. Click ⭐ Today on any Next action on the left.
                 </div>
               )}

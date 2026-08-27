@@ -1,50 +1,126 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0b0d12;
-  --color-bg-raised: #131720;
-  --color-lane-bg: rgba(15, 18, 26, 0.65);
-  --color-card: rgba(20, 24, 34, 0.80);
-  --color-card-hover: rgba(28, 34, 48, 0.90);
-  --color-ink: #f8fafc;
-  --color-ink-dim: #94a3b8;
-  --color-ink-faint: #64748b;
-  --color-border: rgba(255, 255, 255, 0.10);
-  --color-border-soft: rgba(255, 255, 255, 0.06);
-  --color-active: #3b82f6;
-  --color-active-dim: rgba(59, 130, 246, 0.18);
+  --color-bg: var(--surface-bg);
+  --color-bg-raised: var(--surface-raised);
+  --color-lane-bg: var(--surface-lane);
+  --color-card: var(--surface-card);
+  --color-card-hover: var(--surface-card-hover);
+  --color-ink: var(--text-primary);
+  --color-ink-dim: var(--text-secondary);
+  --color-ink-faint: var(--text-muted);
+  --color-border: var(--border-strong);
+  --color-border-soft: var(--border-subtle);
+  --color-active: var(--accent);
+  --color-active-dim: var(--accent-subtle);
   --color-paused: #94a3b8;
   --color-paused-dim: rgba(148, 163, 184, 0.15);
-  --color-blocked: #ef4444;
-  --color-blocked-dim: rgba(239, 68, 68, 0.18);
-  --color-done: #10b981;
-  --color-done-dim: rgba(16, 185, 129, 0.18);
-  --color-queued: #64748b;
-  --color-queued-dim: rgba(100, 116, 139, 0.15);
-  --color-sector-0: #38bdf8;
-  --color-sector-1: #f472b6;
-  --color-sector-2: #818cf8;
-  --color-sector-3: #34d399;
-  --color-sector-4: #fb923c;
-  --color-sector-5: #60a5fa;
-  --color-sector-6: #a78bfa;
-  --color-sector-7: #fbbf24;
+  --color-blocked: #e05244;
+  --color-blocked-dim: rgba(224, 82, 68, 0.15);
+  --color-done: #2e9e6b;
+  --color-done-dim: rgba(46, 158, 107, 0.15);
+  --color-queued: #78716c;
+  --color-queued-dim: rgba(120, 113, 108, 0.15);
+  --color-sector-0: #2b9eb3;
+  --color-sector-1: #c95782;
+  --color-sector-2: #6b77c4;
+  --color-sector-3: #2a9d70;
+  --color-sector-4: #c85a38;
+  --color-sector-5: #4a8ac4;
+  --color-sector-6: #8e6ec2;
+  --color-sector-7: #b88628;
+
+  --color-surface-bg: var(--surface-bg);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-lane: var(--surface-lane);
+  --color-surface-card: var(--surface-card);
+  --color-surface-card-hover: var(--surface-card-hover);
+  --color-surface-card-dominant: var(--surface-card-dominant);
+  --color-surface-modal: var(--surface-modal);
+  --color-surface-input: var(--surface-input);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+
   --font-serif: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Consolas, monospace;
 }
 
-:root {
+/* ── Dark Mode Tokens (Default) ── */
+:root, [data-theme='dark'] {
+  --surface-bg: #151413;
+  --surface-raised: #1c1b19;
+  --surface-lane: #1c1b19;
+  --surface-card: #23221f;
+  --surface-card-hover: #292825;
+  --surface-card-dominant: #242220;
+  --surface-modal: #1c1b19;
+  --surface-input: #171615;
+  --surface-subtle: #282623;
+  --border-subtle: #302e2b;
+  --border-strong: #44413d;
+  --text-primary: #f3ede2;
+  --text-secondary: #b3aca0;
+  --text-muted: #8a8377;
+  --accent: #d96b43;
+  --accent-hover: #e27a53;
+  --accent-subtle: rgba(217, 107, 67, 0.16);
+  --accent-text: #ffffff;
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-modal: 0 12px 40px rgba(0, 0, 0, 0.6);
+
+  /* Preserved Glass tokens for backward compatibility / zero deletion */
   --glass-opacity: 0.525;
   --glass-blur-px: 17px;
   --glass-bg: rgba(18, 23, 34, var(--glass-opacity));
   --glass-blur: blur(var(--glass-blur-px));
   --glass-border: rgba(255, 255, 255, 0.08);
-  accent-color: var(--color-active);
+  accent-color: var(--accent);
+}
+
+/* ── Light Mode Tokens ── */
+[data-theme='light'] {
+  --surface-bg: #f6f4ee;
+  --surface-raised: #eeebe2;
+  --surface-lane: #eeebe2;
+  --surface-card: #ffffff;
+  --surface-card-hover: #faf8f5;
+  --surface-card-dominant: #ffffff;
+  --surface-modal: #ffffff;
+  --surface-input: #ffffff;
+  --surface-subtle: #eae6dc;
+  --border-subtle: #ded9ce;
+  --border-strong: #c4beaf;
+  --text-primary: #1e1c1a;
+  --text-secondary: #57534e;
+  --text-muted: #78716c;
+  --accent: #c25736;
+  --accent-hover: #af4c2e;
+  --accent-subtle: #f5ebe6;
+  --accent-text: #ffffff;
+  --shadow-soft: 0 1px 3px rgba(30, 28, 26, 0.05), 0 4px 12px rgba(30, 28, 26, 0.04);
+  --shadow-modal: 0 8px 30px rgba(30, 28, 26, 0.12);
+
+  /* Preserved Glass tokens for backward compatibility */
+  --glass-opacity: 0.85;
+  --glass-blur-px: 17px;
+  --glass-bg: rgba(255, 255, 255, var(--glass-opacity));
+  --glass-blur: blur(var(--glass-blur-px));
+  --glass-border: rgba(0, 0, 0, 0.08);
+  accent-color: var(--accent);
 }
 
 @layer base {
   html, body {
-    @apply bg-bg text-ink antialiased box-border font-sans;
+    background-color: var(--surface-bg);
+    color: var(--text-primary);
+    @apply antialiased box-border font-sans;
     margin: 0;
     padding: 0;
     height: 100vh;
@@ -52,11 +128,11 @@
   }
 
   body {
-    background-color: #0b0b0d;
+    background-color: var(--surface-bg);
   }
 
   * {
-    @apply border-border-soft;
+    border-color: var(--border-subtle);
     box-sizing: border-box;
   }
 
@@ -64,8 +140,8 @@
     user-select: text !important;
     -webkit-user-select: text !important;
     cursor: text !important;
-    caret-color: #3b82f6 !important;
-    color: #f8fafc !important;
+    caret-color: var(--accent) !important;
+    color: var(--text-primary) !important;
     pointer-events: auto !important;
     -webkit-app-region: no-drag !important;
   }
@@ -88,94 +164,88 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-border rounded-full;
+    background-color: var(--border-strong);
+    border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-ink-faint;
+    background-color: var(--text-muted);
   }
 }
 
 /* ── Progress bar ── */
 .progress-track {
   @apply relative h-2 rounded-full overflow-hidden;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.15);
 }
 .progress-fill {
   @apply h-full rounded-full transition-all duration-300;
-  background: #3b82f6;
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+  background: var(--accent);
 }
 
 /* ── Dominant card (top card in each lane) ── */
 .card-dominant {
   @apply rounded-xl p-3.5 transition-all;
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  background: var(--surface-card-dominant);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
 }
 .card-dominant:hover {
-  background: rgba(0, 0, 0, 0.32);
-  border-color: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+  background: var(--surface-card-hover);
+  border-color: var(--border-strong);
 }
 
 /* ── Compact card ── */
 .card-compact {
   @apply flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all;
-  background: rgba(0, 0, 0, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
 }
 .card-compact:hover {
-  background: rgba(0, 0, 0, 0.28);
-  border-color: rgba(255, 255, 255, 0.10);
+  background: var(--surface-card-hover);
+  border-color: var(--border-strong);
 }
 
-/* ── Lane — frosted glass (100% matching FocusStrip and LifeStack) ── */
+/* ── Lane — Solid flat container with 1px border ── */
 .lane-glass {
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  background: var(--surface-lane);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
 }
 
-/* ── Modal — frosted glass ── */
+/* ── Modal — Solid flat drawer/modal ── */
 .modal-glass {
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  background: var(--surface-modal);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-modal);
 }
 
 /* ── Focus strip tile ── */
 .focus-tile {
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
   @apply rounded-xl p-3 flex flex-col justify-between min-h-[72px];
 }
 
-/* ── Generic Glass Panel (for Settings, Life Stack container, Stats) ── */
+/* ── Generic Flat Panel (for Settings, Life Stack container, Stats) ── */
 .glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
 }
 
 /* ── Status pill fill states ── */
 .status-pill {
   @apply text-[9px] uppercase font-mono px-2 py-0.5 rounded-sm border transition-all;
 }
-.status-pill-active    { @apply bg-active-dim text-active border-active/30; }
-.status-pill-paused    { @apply bg-paused-dim text-paused border-paused/30; }
-.status-pill-blocked   { @apply bg-blocked-dim text-blocked border-blocked/30; }
-.status-pill-done      { @apply bg-done-dim text-done border-done/30; }
-.status-pill-queued    { @apply bg-queued-dim text-queued border-queued/30; }
-.status-pill-inactive  { @apply bg-transparent text-ink-faint border-border-soft hover:border-ink-faint hover:text-ink-dim; }
+.status-pill-active    { background: var(--accent-subtle); color: var(--accent); border-color: var(--accent); }
+.status-pill-paused    { background: var(--surface-subtle); color: var(--text-secondary); border-color: var(--border-subtle); }
+.status-pill-blocked   { background: var(--color-blocked-dim); color: var(--color-blocked); border-color: var(--color-blocked); }
+.status-pill-done      { background: var(--color-done-dim); color: var(--color-done); border-color: var(--color-done); }
+.status-pill-queued    { background: var(--surface-subtle); color: var(--text-muted); border-color: var(--border-subtle); }
+.status-pill-inactive  { background: transparent; color: var(--text-muted); border-color: var(--border-subtle); }
+.status-pill-inactive:hover { border-color: var(--border-strong); color: var(--text-secondary); }
 
 /* ── Lane scroll fade ── */
 .lanes-container {
@@ -189,13 +259,17 @@
 
 /* ── Drag handle for overview rows ── */
 .drag-handle {
-  @apply cursor-grab active:cursor-grabbing text-ink-faint hover:text-ink-dim transition-colors;
+  @apply cursor-grab active:cursor-grabbing transition-colors;
+  color: var(--text-muted);
+}
+.drag-handle:hover {
+  color: var(--text-secondary);
 }
 .drag-row.dragging {
   @apply opacity-50;
 }
 .drag-row.drag-over {
-  @apply border-t-2 border-active;
+  border-top: 2px solid var(--accent);
 }
 
 /* ── Range input with custom track ── */
@@ -203,10 +277,9 @@ input[type='range'].progress-range {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 8px;
+  height: 6px;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+  background: var(--surface-subtle);
   outline: none;
   cursor: ew-resize;
 }
@@ -215,18 +288,17 @@ input[type='range'].progress-range::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  background: var(--accent);
   cursor: ew-resize;
 }
 input[type='range'].progress-range::-webkit-slider-runnable-track {
-  height: 8px;
+  height: 6px;
   border-radius: 9999px;
 }
 
 /* ── Radial progress ring (SVG) ── */
 .progress-ring-track {
-  stroke: rgba(255, 255, 255, 0.10);
+  stroke: var(--surface-subtle);
   fill: none;
 }
 .progress-ring-fill {

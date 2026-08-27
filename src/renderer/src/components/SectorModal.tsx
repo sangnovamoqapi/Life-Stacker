@@ -68,16 +68,16 @@ export const SectorModal: React.FC = () => {
   if (showDeleteConfirm) {
     const otherSectors = sectors.filter(s => s.id !== existingSector?.id)
     return (
-      <div className="fixed inset-0 bg-bg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-bg-raised border border-border w-full max-w-md rounded-xl p-6 shadow-2xl flex flex-col gap-4">
-          <h2 className="font-serif text-xl text-blocked">Delete Sector</h2>
-          <p className="text-sm text-ink-dim">
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="bg-surface-modal border border-border-subtle w-full max-w-md rounded-2xl p-6 shadow-modal flex flex-col gap-4 text-text-primary">
+          <h2 className="font-sans font-bold text-xl text-blocked">Delete Sector</h2>
+          <p className="text-sm text-text-secondary">
             What should we do with the items in <strong>{existingSector?.name}</strong>?
           </p>
           <select
             value={moveToSector}
             onChange={e => setMoveToSector(e.target.value)}
-            className="w-full bg-bg border border-border-soft rounded px-3 py-2 text-sm text-ink outline-none focus:border-ink-dim"
+            className="w-full bg-surface-input border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
           >
             <option value="" disabled>Move items to...</option>
             {otherSectors.map(s => (
@@ -85,8 +85,8 @@ export const SectorModal: React.FC = () => {
             ))}
           </select>
           <div className="flex justify-end gap-2 mt-4">
-            <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-1.5 text-sm text-ink-dim hover:text-ink">Cancel</button>
-            <button onClick={handleDelete} className="bg-blocked text-white px-4 py-1.5 rounded text-sm hover:bg-red-600 transition-colors">
+            <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-1.5 text-sm text-text-muted hover:text-text-primary">Cancel</button>
+            <button onClick={handleDelete} className="bg-blocked text-white px-4 py-1.5 rounded-lg text-sm hover:opacity-90 transition-opacity">
               Confirm Delete
             </button>
           </div>
@@ -96,24 +96,24 @@ export const SectorModal: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 bg-bg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-bg-raised border border-border w-full max-w-md rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="p-4 border-b border-border-soft flex justify-between items-center">
-          <h2 className="font-serif text-xl text-ink">{isNew ? 'New Sector' : 'Edit Sector'}</h2>
-          <button onClick={closeModal} className="text-ink-dim hover:text-ink">✕</button>
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-surface-modal border border-border-subtle w-full max-w-md rounded-2xl shadow-modal flex flex-col max-h-[90vh] text-text-primary overflow-hidden">
+        <div className="p-4 border-b border-border-subtle flex justify-between items-center bg-surface-subtle">
+          <h2 className="font-sans font-bold text-lg text-text-primary">{isNew ? 'New Sector' : 'Edit Sector'}</h2>
+          <button onClick={closeModal} className="text-text-muted hover:text-text-primary text-base">✕</button>
         </div>
 
         <div className="p-6 overflow-y-auto space-y-5">
           {/* Emoji & Name row */}
           <div>
-            <label className="block text-xs font-mono text-slate-400 mb-1">Category Icon & Name</label>
+            <label className="block text-xs font-mono text-text-muted mb-1">Category Icon & Name</label>
             <div className="flex gap-2 items-center">
               <input
                 type="text"
                 value={icon}
                 onChange={e => setIcon(e.target.value)}
                 maxLength={4}
-                className="w-14 text-center text-xl bg-[#121622] border border-white/[0.10] rounded-lg px-2 py-1.5 text-slate-100 outline-none focus:border-blue-500"
+                className="w-14 text-center text-xl bg-surface-input border border-border-subtle rounded-lg px-2 py-1.5 text-text-primary outline-none focus:border-accent"
                 title="Category Emoji"
               />
               <input
@@ -121,7 +121,7 @@ export const SectorModal: React.FC = () => {
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Career, Health, Learning..."
-                className="flex-1 bg-[#121622] border border-white/[0.10] rounded-lg px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500"
+                className="flex-1 bg-surface-input border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
                 autoFocus
               />
             </div>
@@ -133,10 +133,10 @@ export const SectorModal: React.FC = () => {
                   key={preset}
                   type="button"
                   onClick={() => setIcon(preset)}
-                  className={`w-7 h-7 text-sm rounded flex items-center justify-center transition-all ${
+                  className={`w-7 h-7 text-sm rounded-lg flex items-center justify-center transition-all ${
                     icon === preset 
-                      ? 'bg-blue-600/30 border border-blue-500 scale-110' 
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06]'
+                      ? 'bg-accent/20 border border-accent scale-105' 
+                      : 'bg-surface-subtle hover:bg-surface-raised border border-border-subtle'
                   }`}
                 >
                   {preset}
@@ -146,38 +146,38 @@ export const SectorModal: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-mono text-ink-dim mb-2">Color</label>
+            <label className="block text-xs font-mono text-text-muted mb-2">Color</label>
             <div className="flex gap-2">
               {swatches.map(swatch => (
                 <button
                   key={swatch}
                   onClick={() => setColor(swatch)}
-                  className={`w-8 h-8 rounded-full transition-transform ${color === swatch ? 'scale-110 ring-2 ring-active ring-offset-2 ring-offset-bg-raised' : 'hover:scale-105'}`}
+                  className={`w-8 h-8 rounded-full transition-transform ${color === swatch ? 'scale-110 ring-2 ring-accent ring-offset-2 ring-offset-surface-modal' : 'hover:scale-105'}`}
                   style={{ backgroundColor: `var(--color-${swatch})` }}
                 />
               ))}
             </div>
           </div>
 
-          <div className="border-t border-border-soft pt-4">
-            <label className="flex items-center gap-2 text-sm text-ink cursor-pointer mb-4">
+          <div className="border-t border-border-subtle pt-4">
+            <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer mb-4">
               <input 
                 type="checkbox" 
                 checked={notifEnabled} 
                 onChange={e => setNotifEnabled(e.target.checked)}
-                className="accent-active"
+                className="accent-accent"
               />
               Enable Notifications
             </label>
 
             {notifEnabled && (
-              <div className="space-y-4 pl-6 border-l-2 border-border-soft">
+              <div className="space-y-4 pl-6 border-l-2 border-border-subtle">
                 <div>
-                  <label className="block text-xs font-mono text-ink-dim mb-1">Cadence</label>
+                  <label className="block text-xs font-mono text-text-muted mb-1">Cadence</label>
                   <select
                     value={notifCadence}
                     onChange={e => setNotifCadence(e.target.value as any)}
-                    className="w-full bg-bg border border-border-soft rounded px-3 py-1.5 text-sm text-ink outline-none"
+                    className="w-full bg-surface-input border border-border-subtle rounded-lg px-3 py-1.5 text-sm text-text-primary outline-none"
                   >
                     <option value="daily">Daily</option>
                     <option value="every_n_days">Every N Days</option>
@@ -187,26 +187,26 @@ export const SectorModal: React.FC = () => {
 
                 {notifCadence === 'every_n_days' && (
                   <div>
-                    <label className="block text-xs font-mono text-ink-dim mb-1">Interval (days)</label>
+                    <label className="block text-xs font-mono text-text-muted mb-1">Interval (days)</label>
                     <input
                       type="number"
                       min="2"
                       value={notifIntervalDays}
                       onChange={e => setNotifIntervalDays(parseInt(e.target.value, 10))}
-                      className="w-full bg-bg border border-border-soft rounded px-3 py-1.5 text-sm text-ink outline-none"
+                      className="w-full bg-surface-input border border-border-subtle rounded-lg px-3 py-1.5 text-sm text-text-primary outline-none"
                     />
                   </div>
                 )}
 
                 {notifCadence === 'weekdays' && (
                   <div>
-                    <label className="block text-xs font-mono text-ink-dim mb-1">Days</label>
+                    <label className="block text-xs font-mono text-text-muted mb-1">Days</label>
                     <div className="flex gap-1">
                       {['S','M','T','W','T','F','S'].map((d, i) => (
                         <button
                           key={i}
                           onClick={() => toggleWeekday(i)}
-                          className={`w-8 h-8 rounded text-sm transition-colors ${weekdays.includes(i) ? 'bg-active text-bg' : 'bg-bg text-ink-dim border border-border-soft hover:border-ink'}`}
+                          className={`w-8 h-8 rounded-lg text-sm font-semibold transition-colors ${weekdays.includes(i) ? 'bg-accent text-white' : 'bg-surface-subtle text-text-muted border border-border-subtle hover:border-border-strong'}`}
                         >
                           {d}
                         </button>
@@ -216,12 +216,12 @@ export const SectorModal: React.FC = () => {
                 )}
 
                 <div>
-                  <label className="block text-xs font-mono text-ink-dim mb-1">Time</label>
+                  <label className="block text-xs font-mono text-text-muted mb-1">Time</label>
                   <input
                     type="time"
                     value={notifTime}
                     onChange={e => setNotifTime(e.target.value)}
-                    className="w-full bg-bg border border-border-soft rounded px-3 py-1.5 text-sm text-ink outline-none"
+                    className="w-full bg-surface-input border border-border-subtle rounded-lg px-3 py-1.5 text-sm text-text-primary outline-none"
                   />
                 </div>
               </div>
@@ -229,23 +229,23 @@ export const SectorModal: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-4 border-t border-border-soft flex justify-between items-center bg-bg rounded-b-xl">
+        <div className="p-4 border-t border-border-subtle flex justify-between items-center bg-surface-raised">
           {!isNew ? (
             <button 
               onClick={() => setShowDeleteConfirm(true)}
-              className="text-blocked text-sm px-4 py-1.5 rounded hover:bg-blocked-dim transition-colors"
+              className="text-blocked text-sm px-4 py-1.5 rounded-lg hover:bg-blocked-dim transition-colors font-medium"
             >
               Delete
             </button>
           ) : <div/>}
           
           <div className="flex gap-2">
-            <button onClick={closeModal} className="text-ink-dim hover:text-ink px-4 py-1.5 text-sm transition-colors">
+            <button onClick={closeModal} className="text-text-muted hover:text-text-primary px-4 py-1.5 text-sm transition-colors">
               Cancel
             </button>
             <button 
               onClick={handleSave}
-              className="bg-active hover:bg-yellow-500 text-bg font-medium px-6 py-1.5 rounded text-sm transition-colors"
+              className="bg-accent hover:bg-accent-hover text-white font-semibold px-6 py-1.5 rounded-lg text-sm shadow-soft transition-all"
             >
               Save
             </button>

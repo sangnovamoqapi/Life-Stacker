@@ -40,23 +40,23 @@ export const TodayBumpModal: React.FC<TodayBumpModalProps> = ({
   const getSector = (sectorId?: string) => sectors.find(s => s.id === sectorId)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-fade-in">
       <div 
-        className="w-full max-w-md modal-glass rounded-2xl border border-amber-500/30 shadow-2xl p-5 flex flex-col gap-4 text-slate-100"
+        className="w-full max-w-md bg-surface-modal rounded-2xl border border-border-subtle shadow-modal p-5 flex flex-col gap-4 text-text-primary"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-white/[0.08] pb-3">
+        <div className="flex items-start justify-between border-b border-border-subtle pb-3">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xl">🎯</span>
-              <h2 className="font-sans text-base font-bold text-slate-100">
+              <h2 className="font-sans text-base font-bold text-text-primary">
                 Today Focus Cap ({todayItems.length} / {todayCap})
               </h2>
             </div>
-            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              Your Today focus is capped at <strong className="text-amber-300">{todayCap} items</strong>. 
-              To bring in <strong className="text-slate-100">"{targetNextItemTitle}"</strong>, select one item to bump back to Next:
+            <p className="text-xs text-text-secondary mt-1 leading-relaxed">
+              Your Today focus is capped at <strong className="text-accent">{todayCap} items</strong>. 
+              To bring in <strong className="text-text-primary">"{targetNextItemTitle}"</strong>, select one item to bump back to Next:
             </p>
           </div>
         </div>
@@ -67,7 +67,7 @@ export const TodayBumpModal: React.FC<TodayBumpModalProps> = ({
             const isSelected = selectedBumpId === item.id
             const parentEpic = getEpic(item.epic_id)
             const parentSector = getSector(parentEpic?.sector_id)
-            const sectorColor = parentSector ? `var(--color-${parentSector.color})` : '#3b82f6'
+            const sectorColor = parentSector ? `var(--color-${parentSector.color})` : 'var(--accent)'
 
             return (
               <div
@@ -75,8 +75,8 @@ export const TodayBumpModal: React.FC<TodayBumpModalProps> = ({
                 onClick={() => setSelectedBumpId(item.id)}
                 className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-amber-500/15 border-amber-400/60 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                    : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06]'
+                    ? 'bg-accent/15 border-accent shadow-xs'
+                    : 'bg-surface-subtle border-border-subtle hover:bg-surface-raised'
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0 pr-2">
@@ -85,53 +85,49 @@ export const TodayBumpModal: React.FC<TodayBumpModalProps> = ({
                     name="itemToBump"
                     checked={isSelected}
                     onChange={() => setSelectedBumpId(item.id)}
-                    className="accent-amber-400 shrink-0 cursor-pointer"
+                    className="accent-accent shrink-0 cursor-pointer"
                   />
                   <div className="min-w-0">
-                    <div className="text-xs font-semibold text-slate-100 truncate">
+                    <div className="text-xs font-semibold text-text-primary truncate">
                       {item.title}
                     </div>
                     {parentEpic && (
-                      <div className="flex items-center gap-1 mt-0.5 text-[10px] font-mono text-slate-400">
+                      <div className="flex items-center gap-1 mt-0.5 text-[10px] font-mono text-text-muted">
                         <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic.title}</span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="shrink-0 flex items-center gap-1.5">
-                  {item.time_estimate_value && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                <div className="text-right shrink-0">
+                  {item.time_estimate_value ? (
+                    <span className="text-[10px] font-mono text-text-muted bg-surface-card px-2 py-0.5 rounded-full border border-border-subtle">
                       ⏱ {formatEffortBadge(item.time_estimate_value, (item.time_estimate_unit as any) || 'hours')}
                     </span>
-                  )}
-                  <span className="text-[10px] font-mono text-slate-400 bg-white/[0.06] px-1.5 py-0.5 rounded border border-white/[0.08]">
-                    Bump
-                  </span>
+                  ) : null}
                 </div>
               </div>
             )
           })}
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/[0.08]">
+        {/* Footer actions */}
+        <div className="flex justify-end items-center gap-2 pt-2 border-t border-border-subtle">
           <button
             type="button"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="px-3.5 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] rounded-xl transition-all cursor-pointer"
+            className="px-4 py-1.5 text-xs text-text-muted hover:text-text-primary transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={!selectedBumpId || isSubmitting}
-            className="px-4 py-1.5 text-xs font-bold text-slate-900 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 disabled:opacity-50 rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+            disabled={isSubmitting || !selectedBumpId}
+            className="px-4 py-1.5 text-xs font-bold text-white bg-accent hover:bg-accent-hover rounded-lg shadow-soft transition-all cursor-pointer disabled:opacity-50"
           >
-            <span>⇄</span>
-            <span>{isSubmitting ? 'Bumping...' : 'Bump & Promote'}</span>
+            {isSubmitting ? 'Swapping...' : 'Bump & Activate'}
           </button>
         </div>
       </div>

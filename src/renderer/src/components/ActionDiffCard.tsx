@@ -214,24 +214,24 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-white/[0.12] bg-slate-900/75 backdrop-blur-md p-3.5 shadow-lg space-y-2.5 transition-all text-xs font-sans">
+    <div className="mt-3 rounded-xl border border-border-subtle bg-surface-card p-3.5 shadow-soft space-y-2.5 transition-all text-xs font-sans text-text-primary">
       {/* Header bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider ${
             isCreate 
-              ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30' 
+              ? 'bg-accent/15 text-accent border border-accent/30' 
               : isExploreCreate
-                ? 'bg-purple-400/20 text-purple-300 border border-purple-400/30'
+                ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
                 : isAddSteps
-                  ? 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
-                  : 'bg-blue-400/20 text-blue-300 border border-blue-400/30'
+                  ? 'bg-done/15 text-done border border-done/30'
+                  : 'bg-surface-subtle text-text-secondary border border-border-subtle'
           }`}>
             {isCreate ? '+ Create Epic' : isExploreCreate ? '🔬 + Explore Topic' : isAddSteps ? '⚡ + Add Next Actions' : '✎ Update Epic'}
           </span>
           {targetSector && (
             <span 
-              className="flex items-center gap-1 font-mono text-[11px] font-semibold px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.08]"
+              className="flex items-center gap-1 font-mono text-[11px] font-semibold px-2 py-0.5 rounded bg-surface-subtle border border-border-subtle"
               style={{ color: `var(--color-${targetSector.color})` }}
             >
               <span>{targetSector.icon || '📁'}</span>
@@ -242,12 +242,12 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
         {/* Resolved Badge */}
         {action.status === 'accepted' && (
-          <span className="text-[10px] font-mono uppercase font-bold text-emerald-400 bg-emerald-400/15 border border-emerald-400/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <span className="text-[10px] font-mono uppercase font-bold text-done bg-done/15 border border-done/30 px-2 py-0.5 rounded-full flex items-center gap-1">
             ✓ Accepted
           </span>
         )}
         {action.status === 'rejected' && (
-          <span className="text-[10px] font-mono uppercase font-bold text-slate-400 bg-slate-400/15 border border-slate-400/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <span className="text-[10px] font-mono uppercase font-bold text-text-muted bg-surface-subtle border border-border-subtle px-2 py-0.5 rounded-full flex items-center gap-1">
             ✕ Rejected
           </span>
         )}
@@ -258,8 +258,8 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
         <div className="space-y-2 pl-1">
           {isCreate && (
             <div>
-              <span className="text-slate-400 font-medium">Epic Title: </span>
-              <span className="font-bold text-slate-100">{parsedArgs.title}</span>
+              <span className="text-text-muted font-medium">Epic Title: </span>
+              <span className="font-bold text-text-primary">{parsedArgs.title}</span>
             </div>
           )}
           {isExploreCreate && (
@@ -554,7 +554,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
       {/* Action Buttons for Pending Status */}
       {action.status === 'pending' && (
-        <div className="flex items-center justify-end gap-2 pt-1 border-t border-white/[0.08]">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-subtle">
           <button
             type="button"
             onClick={(e) => {
@@ -565,7 +565,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
               setIsEditing(!isEditing)
             }}
             disabled={isSubmitting}
-            className="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200 border border-white/[0.08] hover:border-white/[0.20] font-mono text-[11px] transition-colors"
+            className="px-2.5 py-1 rounded-lg text-text-muted hover:text-text-primary border border-border-subtle hover:border-border-strong font-mono text-[11px] transition-colors"
           >
             {isEditing ? 'Cancel Edit' : 'Edit ✎'}
           </button>
@@ -573,7 +573,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
             type="button"
             onClick={handleReject}
             disabled={isSubmitting}
-            className="px-3 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border border-white/[0.10] font-semibold text-[11px] transition-colors"
+            className="px-3 py-1 rounded-lg bg-surface-subtle hover:bg-surface-raised text-text-secondary border border-border-subtle font-semibold text-[11px] transition-colors"
           >
             Reject ✕
           </button>
@@ -581,7 +581,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
             type="button"
             onClick={handleAccept}
             disabled={isSubmitting}
-            className="px-3.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] transition-all shadow-md active:scale-95"
+            className="px-3.5 py-1 rounded-lg bg-accent hover:bg-accent-hover text-white font-bold text-[11px] transition-all shadow-soft active:scale-95"
           >
             {isSubmitting ? 'Applying...' : 'Accept ✓'}
           </button>

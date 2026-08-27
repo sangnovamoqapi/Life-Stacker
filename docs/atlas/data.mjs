@@ -52,7 +52,8 @@ export const DECISIONS = [
   { axis: 'AI Synthesis', decision: 'Automated synthesis from Explore research notes to staged Next actions with atomic batch commit', adr: '[ADR 017](../ARCHITECTURE_DECISIONS.md#adr-017-explore-to-next-ai-synthesis--atomic-batch-staging-phase-3)' },
   { axis: 'Pace & Horizon', decision: 'Non-alerting velocity calculation and discretionary capacity modeling (28h/week)', adr: '[ADR 018](../ARCHITECTURE_DECISIONS.md#adr-018-derived-pace-burn-tracking-engine--discretionary-capacity-phase-4)' },
   { axis: 'AI Model Choice', decision: 'Dynamic Ollama /api/tags discovery, custom tag selector, and 4-tier native tool calling', adr: '[ADR 020](../ARCHITECTURE_DECISIONS.md#adr-020-dynamic-local-ai-model-selector--4-tier-assistant-architecture)' },
-  { axis: 'Interactive Tour', decision: 'Dynamic SVG spotlight walkthrough with deferred roadmap for Lanes re-visualization and Stats revamp', adr: '[ADR 021](../ARCHITECTURE_DECISIONS.md#adr-021-interactive-ui-walkthrough--deferred-screen-roadmap-lanes--stats-revamps)' }
+  { axis: 'Interactive Tour', decision: 'Dynamic SVG spotlight walkthrough with deferred roadmap for Lanes re-visualization and Stats revamp', adr: '[ADR 021](../ARCHITECTURE_DECISIONS.md#adr-021-interactive-ui-walkthrough--deferred-screen-roadmap-lanes--stats-revamps)' },
+  { axis: 'Theme Architecture', decision: 'Flat warm-neutral minimal token system with instant runtime light/dark switching and WCAG AA contrast', adr: '[ADR 022](../ARCHITECTURE_DECISIONS.md#adr-022-flat-warm-neutral-minimal-dual-mode-token-system--runtime-theme-switching)' }
 ];
 
 export const GROUPS = [
