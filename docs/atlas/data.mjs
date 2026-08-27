@@ -498,4 +498,7 @@ export const HOW_HTML = `<div class="eyebrow">LifeStack 2.0 · Architecture Atla
   <li><b>Top-Right:</b> Explore Panel sorted by Staleness (oldest touched first).</li>
   <li><b>Bottom-Left:</b> Next Actions Backlog sorted by Due Date then Effort.</li>
   <li><b>Bottom-Right:</b> Today Focus strictly capped at 3 with TodayBumpModal.</li>
-</ul>`;
+</ul>
+
+<h3 class="sec">5. Graph Relationships & Edge Diff Cards</h3>
+<p>Cross-epic dependencies and graph relationships (<code>depends_on</code>, <code>supports</code>, <code>contradicts</code>, <code>relates_to</code>) strictly adhere to the propose-never-commit architecture. The conversational co-pilot utilizes a compact in-context ID-to-title index for instant single-turn resolution without lookup latency, presenting interactive edge diff cards for user review.</p>`;

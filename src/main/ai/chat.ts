@@ -6,10 +6,12 @@ import * as itemsDb from '../db/items'
 import * as exploreItemsDb from '../db/explore-items'
 import * as nextItemsDb from '../db/next-items'
 import * as actionStepsDb from '../db/action-steps'
+import * as edgesDb from '../db/edges'
 import * as ollamaClient from './ollama-client'
 import type { ChatMessage, PendingAction, Sector, Item, ItemStatus } from '../../preload/types'
 
 const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
+export const SEED_RELATION_TYPES = ['depends_on', 'supports', 'contradicts', 'relates_to'] as const
 
 export function normalizeActionSteps(
   rawSteps: any, 
@@ -367,6 +369,27 @@ const TOOLS_SCHEMA = [
   {
     type: 'function',
     function: {
+      name: 'edges_create',
+      description: 'Propose creating a graph relationship (edge) between two existing items or epics. Valid relation types are: depends_on, supports, contradicts, relates_to. This creates a pending diff card for user confirmation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          from_item_id: { type: 'string', description: 'The exact ID of the source item/epic' },
+          to_item_id: { type: 'string', description: 'The exact ID of the target item/epic' },
+          relation_type: { 
+            type: 'string', 
+            enum: ['depends_on', 'supports', 'contradicts', 'relates_to'], 
+            description: 'The relationship type (must be one of: depends_on, supports, contradicts, relates_to)' 
+          },
+          note: { type: 'string', description: 'Optional explanation or rationale for why this relationship exists' }
+        },
+        required: ['from_item_id', 'to_item_id', 'relation_type']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'memory_search',
       description: 'Search the user\'s Life Stack epics, explore research topics, next actions, notes, and vector memory for relevant context or answers.',
       parameters: {
@@ -401,6 +424,11 @@ function getSystemPrompt(): string {
     return `  #${i.priority_rank} [${s ? s.name : 'Unknown'}] ${i.title} (${i.progress}%, status: ${i.status}) [ID: ${i.id}]`
   }).join('\n')
 
+  const compactItemIndex = items.map(i => {
+    const s = sectors.find(sec => sec.id === i.sector_id)
+    return `  - [ID: ${i.id}] Title: "${i.title}" (Sector: ${s ? s.name : 'Unknown'}, Status: ${i.status})`
+  }).join('\n')
+
   return `You are LifeStack Assistant, an intelligent, active-voice productivity co-pilot embedded in LifeStack.
 You help the user organize and advance their life goals across the 4-Tier LifeStack Framework:
 
@@ -428,6 +456,9 @@ ${sectorSummary}
 Top Active Epics:
 ${topActiveItems || '  (No active epics)'}
 
+COMPACT ITEM INDEX (for resolving item references & relationships):
+${compactItemIndex || '  (No items in stack)'}
+
 ═══════════════════════════════════════════════════════════════════════════════
 BEHAVIOR & TOOL GUIDELINES:
 ═══════════════════════════════════════════════════════════════════════════════
@@ -435,18 +466,25 @@ BEHAVIOR & TOOL GUIDELINES:
    - Call \`items_create\`.
    - Provide a descriptive 'title' (e.g. "MS in Ireland Application & Study") and appropriate 'sector_id'.
    - Set an appropriate 'time_budget' (e.g. \`{ value: 1, unit: "years" }\` or \`{ value: 6, unit: "months" }\`).
-   - ALWAYS include 1 to 3 \`explore_topics\` for unknown research, comparisons, or questions (e.g. \`[{"title": "Research Stamp 1G post-study work visa requirements", "notes": "Check criteria, duration, and eligible tech roles"}, {"title": "Compare Trinity College vs UCD MSc in Computer Science", "notes": "Fees, course modules, and admission deadlines"}]\`).
-   - ALWAYS include 1 to 3 \`next_items\` for immediate execution steps (e.g. \`[{"title": "Download transcript from university portal", "time_estimate_value": 1, "time_estimate_unit": "hours", "status": "today"}, {"title": "Draft statement of purpose outline", "time_estimate_value": 2, "time_estimate_unit": "hours", "status": "next"}]\`).
+   - ALWAYS include 1 to 3 \`explore_topics\` for unknown research, comparisons, or questions.
+   - ALWAYS include 1 to 3 \`next_items\` for immediate execution steps.
    - NEVER create empty Epics without Explore research or Next actions attached!
 2. ADDING RESEARCH / EXPLORATION TOPICS:
    - Call \`explore_create\` with \`epic_id\`, \`title\` (concise research question/topic), and \`notes\` (findings, questions, references).
    - Use this whenever the user shares findings, asks to research something, or wants to explore options.
 3. ADDING CONCRETE NEXT ACTIONS:
    - Call \`next_items_create\` with \`epic_id\` and list of \`items\` with concise action titles and estimated effort.
-4. UPDATING EPICS OR CHECKING STATE:
+4. CREATING RELATIONSHIPS / EDGES:
+   - Call \`edges_create\` to propose linking two items with a relationship.
+   - Required parameters: \`from_item_id\`, \`to_item_id\`, \`relation_type\`. Optional: \`note\`.
+   - Valid relation types: 'depends_on', 'supports', 'contradicts', 'relates_to'.
+   - Always use the COMPACT ITEM INDEX above to resolve item names/titles to exact item IDs without needing a lookup round-trip.
+   - Example: If item A ("Deploy API") depends on item B ("Buy Server"), from_item_id is A's ID, to_item_id is B's ID, and relation_type is 'depends_on'.
+   - Never propose a self-edge (from_item_id must not equal to_item_id).
+5. UPDATING EPICS OR CHECKING STATE:
    - Call \`items_update\` to change status, progress, notes, or time budget.
-   - Call \`memory_search\` to inspect tasks, explore notes, and context before answering.
-5. All item creations create pending action diff cards that require user confirmation.
+   - Call \`memory_search\` for semantic questions ("what's stale in Health"), NOT for ID lookups (use COMPACT ITEM INDEX instead).
+6. All item creations and edge relationships create pending action diff cards that require user confirmation.
 `
 }
 
@@ -606,6 +644,22 @@ export async function acceptAction(actionId: string, overrides?: Record<string, 
       if (finalArgs.time_budget !== undefined) changes.time_budget = JSON.stringify(finalArgs.time_budget)
 
       itemsDb.updateItem(finalArgs.id, changes)
+    } else if (action.tool_name === 'edges:create' || action.tool_name === 'edges_create') {
+      if (!finalArgs.from_item_id || !finalArgs.to_item_id) {
+        return { success: false, error: 'Missing from_item_id or to_item_id' }
+      }
+      if (finalArgs.from_item_id === finalArgs.to_item_id) {
+        return { success: false, error: 'Cannot create relationship to self' }
+      }
+      if (!SEED_RELATION_TYPES.includes(finalArgs.relation_type)) {
+        return { success: false, error: `Invalid relation_type "${finalArgs.relation_type}". Valid: ${SEED_RELATION_TYPES.join(', ')}` }
+      }
+      edgesDb.createEdge({
+        from_item_id: finalArgs.from_item_id,
+        to_item_id: finalArgs.to_item_id,
+        relation_type: finalArgs.relation_type,
+        note: finalArgs.note || null
+      })
     }
 
     const now = new Date().toISOString()
@@ -943,11 +997,61 @@ export async function sendMessage(userContent: string): Promise<{ assistantMessa
           resolved_at: null
         }
         pendingActions.push(actionRow)
+      } else if (toolName === 'edges_create' || toolName === 'edges:create') {
+        let fromId = rawArgs.from_item_id
+        let toId = rawArgs.to_item_id
+
+        // Attempt resolving titles to item IDs if direct UUID not found
+        if (!items.some(i => i.id === fromId)) {
+          const match = items.find(i => i.title.toLowerCase() === String(fromId).toLowerCase())
+          if (match) fromId = match.id
+        }
+        if (!items.some(i => i.id === toId)) {
+          const match = items.find(i => i.title.toLowerCase() === String(toId).toLowerCase())
+          if (match) toId = match.id
+        }
+
+        if (!fromId || !items.some(i => i.id === fromId)) {
+          validationErrors.push(`Source item "${rawArgs.from_item_id}" not found in stack.`)
+          continue
+        }
+        if (!toId || !items.some(i => i.id === toId)) {
+          validationErrors.push(`Target item "${rawArgs.to_item_id}" not found in stack.`)
+          continue
+        }
+
+        if (fromId === toId) {
+          validationErrors.push('Cannot create a relationship from an item to itself (self-edges are not permitted).')
+          continue
+        }
+
+        const relationType = String(rawArgs.relation_type || '').toLowerCase().trim()
+        if (!SEED_RELATION_TYPES.includes(relationType as any)) {
+          validationErrors.push(
+            `The proposed relationship type "${rawArgs.relation_type}" is not part of the standard vocabulary (${SEED_RELATION_TYPES.join(', ')}). Would you like to add "${rawArgs.relation_type}" to the vocabulary, or should we use one of the standard types?`
+          )
+          continue
+        }
+
+        rawArgs.from_item_id = fromId
+        rawArgs.to_item_id = toId
+        rawArgs.relation_type = relationType
+
+        const actionId = uuid()
+        const actionRow: PendingAction = {
+          id: actionId,
+          message_id: assistantMsgId,
+          tool_name: 'edges:create',
+          arguments: JSON.stringify(rawArgs),
+          status: 'pending',
+          resolved_at: null
+        }
+        pendingActions.push(actionRow)
       }
     }
   }
 
-  // Fallback: If no tool call was emitted but user has clear creation intent
+  // Fallback: If no tool call was emitted but user has clear creation/linking intent
   if (pendingActions.length === 0 && (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0)) {
     const createIntent = userContent.match(/^(?:please\s+)?(?:create|add|new)\s+(?:an?\s+)?(?:item|task)\b/i)
     if (createIntent) {
@@ -974,6 +1078,40 @@ export async function sendMessage(userContent: string): Promise<{ assistantMessa
         resolved_at: null
       }
       pendingActions.push(actionRow)
+    }
+
+    // Relationship intent fallback (e.g. "Make Deploy API depend on Buy Server")
+    const relMatch = userContent.match(/(?:make|set|link)?\s*["']?([^"'\n]+?)["']?\s+(?:to\s+)?(depends on|is blocked by|supports|contradicts|relates to|is related to)\s+["']?([^"'\n]+?)["']?$/i)
+    if (relMatch) {
+      const sourceQuery = relMatch[1].trim()
+      const relPhrase = relMatch[2].toLowerCase()
+      const targetQuery = relMatch[3].trim()
+
+      const sourceItem = items.find(i => i.title.toLowerCase().includes(sourceQuery.toLowerCase()) || sourceQuery.toLowerCase().includes(i.title.toLowerCase()))
+      const targetItem = items.find(i => i.title.toLowerCase().includes(targetQuery.toLowerCase()) || targetQuery.toLowerCase().includes(i.title.toLowerCase()))
+
+      if (sourceItem && targetItem && sourceItem.id !== targetItem.id) {
+        let relationType = 'relates_to'
+        if (relPhrase.includes('depend') || relPhrase.includes('blocked')) relationType = 'depends_on'
+        else if (relPhrase.includes('support')) relationType = 'supports'
+        else if (relPhrase.includes('contradict')) relationType = 'contradicts'
+
+        const actionId = uuid()
+        const actionRow: PendingAction = {
+          id: actionId,
+          message_id: assistantMsgId,
+          tool_name: 'edges:create',
+          arguments: JSON.stringify({
+            from_item_id: sourceItem.id,
+            to_item_id: targetItem.id,
+            relation_type: relationType,
+            note: ''
+          }),
+          status: 'pending',
+          resolved_at: null
+        }
+        pendingActions.push(actionRow)
+      }
     }
   }
 
