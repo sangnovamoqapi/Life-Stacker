@@ -264,4 +264,19 @@ This document tracks all foundational architecture, design, and engineering deci
      - Updated all views (`OverviewView`, `LanesView`, `ChatView`, `SettingsView`, `StatsView`) and modals (`Card`, `Lane`, `ItemModal`, `FocusStrip`, `SectorModal`, `HelpModal`, `TodayBumpModal`, `ParkSwapModal`, `ChecklistEffortModal`, `Toast`, `ActionDiffCard`, `InteractiveTour`).
 - **Rationale**: Elevates readability and visual clarity with a refined, distraction-free aesthetic while achieving strict WCAG AA contrast compliance and instantaneous dual-mode switching.
 
+---
 
+## ADR 023: Graph Edge Relationships via Conversational AI & Propose-Never-Commit Diff Cards
+- **Date**: 2026-08-28
+- **Decision**:
+  1. **Propose-Never-Commit Diff Card Protocol**:
+     - `edges_create` / `edges:create` strictly routes through the identical `pending_action` flow as item creation. No fast-path direct database writes are permitted.
+     - Front-end renders interactive directional diff cards (`ActionDiffCard.tsx`) displaying Source Item $\to$ Relation Badge $\to$ Target Item with editable dropdowns, note fields, and Accept/Reject buttons.
+  2. **Compact ID-to-Title Index in System Context**:
+     - Injected a lightweight `{ id, title, sector, status }` index into the LLM system prompt in `getSystemPrompt()` (`src/main/ai/chat.ts`).
+     - Enables single-turn name resolution ("Prepare Presentation depends on Finalize Slides") without lookup tool round-trip latency, preserving `memory_search` strictly for semantic context queries.
+  3. **Strict Validation & Vocabulary Defense**:
+     - Enforced seed vocabulary: `['depends_on', 'supports', 'contradicts', 'relates_to']`.
+     - Non-seed relation types are not silently coerced; the assistant surfaces a plain conversational query asking the user whether to expand the vocabulary.
+     - Self-edges (`from_item_id === to_item_id`) are rejected before creating pending actions or diff cards.
+- **Rationale**: Keeps relational graph structuring safe, auditable, and human-supervised while equipping local models with low-latency name resolution.

@@ -67,7 +67,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
       }).filter(Boolean) as ExploreDraft[]
     : []
 
-  // Editable fields
+  // Editable fields for items / explore
   const [title, setTitle] = useState<string>(parsedArgs.title || '')
   const [sectorId, setSectorId] = useState<string>(parsedArgs.sector_id || sectors[0]?.id || '')
   const [status, setStatus] = useState<ItemStatus>(parsedArgs.status || 'queued')
@@ -79,15 +79,28 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
   const [newExploreTitle, setNewExploreTitle] = useState('')
   const [newExploreNotes, setNewExploreNotes] = useState('')
 
+  // Editable fields for edge relationships
+  const [fromItemId, setFromItemId] = useState<string>(parsedArgs.from_item_id || items[0]?.id || '')
+  const [toItemId, setToItemId] = useState<string>(parsedArgs.to_item_id || items[1]?.id || items[0]?.id || '')
+  const [relationType, setRelationType] = useState<string>(parsedArgs.relation_type || 'depends_on')
+  const [edgeNote, setEdgeNote] = useState<string>(parsedArgs.note || '')
+
   const isCreate = action.tool_name === 'items:create' || action.tool_name === 'items_create'
   const isUpdate = action.tool_name === 'items:update' || action.tool_name === 'items_update'
   const isAddSteps = action.tool_name === 'action_steps:create' || action.tool_name === 'action_steps_create' || action.tool_name === 'next_items_create' || action.tool_name === 'next_items:create'
   const isExploreCreate = action.tool_name === 'explore_create' || action.tool_name === 'explore:create' || action.tool_name === 'explore_items_create'
+  const isEdgeCreate = action.tool_name === 'edges:create' || action.tool_name === 'edges_create'
 
   // Look up target item if update or addSteps or explore
   const targetItemId = isUpdate ? parsedArgs.id : (isAddSteps || isExploreCreate ? (parsedArgs.epic_id || parsedArgs.item_id) : null)
   const targetItem = targetItemId ? items.find(i => i.id === targetItemId) : null
   const targetSector = sectors.find(s => s.id === (isEditing ? sectorId : (parsedArgs.sector_id || targetItem?.sector_id)))
+
+  // Look up items for edge relationships
+  const fromItem = items.find(i => i.id === (isEditing ? fromItemId : parsedArgs.from_item_id))
+  const toItem = items.find(i => i.id === (isEditing ? toItemId : parsedArgs.to_item_id))
+  const fromSector = sectors.find(s => s.id === fromItem?.sector_id)
+  const toSector = sectors.find(s => s.id === toItem?.sector_id)
 
   const handleAddStep = () => {
     const trimmed = newStepContent.trim()
@@ -164,6 +177,16 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
         if (status) overrides.status = status
         if (progress !== undefined) overrides.progress = progress
         if (notes !== undefined) overrides.notes = notes
+      } else if (isEdgeCreate) {
+        if (fromItemId === toItemId) {
+          setError('Cannot create a relationship from an item to itself.')
+          setIsSubmitting(false)
+          return
+        }
+        overrides.from_item_id = fromItemId
+        overrides.to_item_id = toItemId
+        overrides.relation_type = relationType
+        overrides.note = edgeNote
       }
 
       const res = await window.api.chat.acceptAction(action.id, overrides)
@@ -175,7 +198,9 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
               ? `Created Explore topic "${title || parsedArgs.title}"`
               : isAddSteps 
                 ? 'Added Next actions' 
-                : 'Updated Epic', 
+                : isEdgeCreate
+                  ? `Linked "${fromItem?.title || 'Item'}" → "${toItem?.title || 'Item'}"`
+                  : 'Updated Epic', 
           'success'
         )
         await refreshAll()
@@ -225,11 +250,21 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
                 ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
                 : isAddSteps
                   ? 'bg-done/15 text-done border border-done/30'
-                  : 'bg-surface-subtle text-text-secondary border border-border-subtle'
+                  : isEdgeCreate
+                    ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                    : 'bg-surface-subtle text-text-secondary border border-border-subtle'
           }`}>
-            {isCreate ? '+ Create Epic' : isExploreCreate ? '🔬 + Explore Topic' : isAddSteps ? '⚡ + Add Next Actions' : '✎ Update Epic'}
+            {isCreate 
+              ? '+ Create Epic' 
+              : isExploreCreate 
+                ? '🔬 + Explore Topic' 
+                : isAddSteps 
+                  ? '⚡ + Add Next Actions' 
+                  : isEdgeCreate
+                    ? '🔗 Proposed Relationship'
+                    : '✎ Update Epic'}
           </span>
-          {targetSector && (
+          {targetSector && !isEdgeCreate && (
             <span 
               className="flex items-center gap-1 font-mono text-[11px] font-semibold px-2 py-0.5 rounded bg-surface-subtle border border-border-subtle"
               style={{ color: `var(--color-${targetSector.color})` }}
@@ -256,6 +291,51 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
       {/* Content View / Edit Mode */}
       {!isEditing ? (
         <div className="space-y-2 pl-1">
+          {/* Edge Creation Preview */}
+          {isEdgeCreate && (
+            <div className="space-y-2.5 py-1">
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-surface-subtle border border-border-subtle">
+                {/* Source Item */}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-wider">Source Item</div>
+                  <div className="font-bold text-text-primary truncate">{fromItem?.title || parsedArgs.from_item_id}</div>
+                  {fromSector && (
+                    <span className="text-[10px] font-mono" style={{ color: `var(--color-${fromSector.color})` }}>
+                      {fromSector.icon} {fromSector.name}
+                    </span>
+                  )}
+                </div>
+
+                {/* Directional Relation Pill */}
+                <div className="flex flex-col items-center shrink-0 px-2">
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-accent-subtle text-accent border border-accent/30 capitalize">
+                    {parsedArgs.relation_type ? String(parsedArgs.relation_type).replace(/_/g, ' ') : 'relates to'}
+                  </span>
+                  <span className="text-text-muted text-xs">──▶</span>
+                </div>
+
+                {/* Target Item */}
+                <div className="flex-1 min-w-0 text-right">
+                  <div className="text-[10px] font-mono text-text-muted uppercase tracking-wider">Target Item</div>
+                  <div className="font-bold text-text-primary truncate">{toItem?.title || parsedArgs.to_item_id}</div>
+                  {toSector && (
+                    <span className="text-[10px] font-mono" style={{ color: `var(--color-${toSector.color})` }}>
+                      {toSector.icon} {toSector.name}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {parsedArgs.note && (
+                <div className="text-xs text-text-secondary italic">
+                  <span className="text-text-muted font-medium not-italic">Note: </span>
+                  {parsedArgs.note}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Epic Creation Preview */}
           {isCreate && (
             <div>
               <span className="text-text-muted font-medium">Epic Title: </span>
@@ -264,48 +344,48 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
           )}
           {isExploreCreate && (
             <div>
-              <span className="text-slate-400 font-medium">Research Topic: </span>
-              <span className="font-bold text-purple-200">{parsedArgs.title}</span>
+              <span className="text-text-muted font-medium">Research Topic: </span>
+              <span className="font-bold text-purple-400">{parsedArgs.title}</span>
             </div>
           )}
           {(isUpdate || isAddSteps || isExploreCreate) && targetItem && (
             <div>
-              <span className="text-slate-400 font-medium">Parent Epic: </span>
-              <span className="font-bold text-slate-100">{targetItem.title}</span>
+              <span className="text-text-muted font-medium">Parent Epic: </span>
+              <span className="font-bold text-text-primary">{targetItem.title}</span>
             </div>
           )}
-          {parsedArgs.status && (
+          {!isEdgeCreate && parsedArgs.status && (
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 font-medium">Status: </span>
-              <span className="font-mono text-slate-200 capitalize bg-white/[0.06] px-1.5 py-0.2 rounded font-semibold">
+              <span className="text-text-muted font-medium">Status: </span>
+              <span className="font-mono text-text-primary capitalize bg-surface-subtle px-1.5 py-0.2 rounded font-semibold border border-border-subtle">
                 {parsedArgs.status}
               </span>
             </div>
           )}
-          {parsedArgs.progress !== undefined && (
+          {!isEdgeCreate && parsedArgs.progress !== undefined && (
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 font-medium">Progress: </span>
-              <span className="font-mono text-amber-300 font-bold">{parsedArgs.progress}%</span>
+              <span className="text-text-muted font-medium">Progress: </span>
+              <span className="font-mono text-accent font-bold">{parsedArgs.progress}%</span>
             </div>
           )}
-          {parsedArgs.notes && (
+          {!isEdgeCreate && parsedArgs.notes && (
             <div>
-              <span className="text-slate-400 font-medium">{isExploreCreate ? 'Findings / Notes: ' : 'Notes: '}</span>
-              <span className="text-slate-300 italic">{parsedArgs.notes}</span>
+              <span className="text-text-muted font-medium">{isExploreCreate ? 'Findings / Notes: ' : 'Notes: '}</span>
+              <span className="text-text-secondary italic">{parsedArgs.notes}</span>
             </div>
           )}
 
           {/* Explore Topics List View */}
           {exploreTopics.length > 0 && (
             <div className="space-y-1.5 pt-1">
-              <span className="text-purple-300 font-medium flex items-center gap-1 font-mono text-[11px]">
+              <span className="text-purple-400 font-medium flex items-center gap-1 font-mono text-[11px]">
                 <span>🔬</span> Explore Topics ({exploreTopics.length}):
               </span>
               <div className="space-y-1.5 pl-2.5 border-l-2 border-purple-500/40">
                 {exploreTopics.map((exp, idx) => (
-                  <div key={idx} className="text-slate-200 bg-purple-950/20 p-2 rounded border border-purple-500/20">
-                    <span className="font-semibold text-purple-200">{exp.title}</span>
-                    {exp.notes && <p className="text-[11px] text-slate-300 italic mt-0.5">{exp.notes}</p>}
+                  <div key={idx} className="text-text-primary bg-surface-subtle p-2 rounded-lg border border-purple-500/20">
+                    <span className="font-semibold text-purple-400">{exp.title}</span>
+                    {exp.notes && <p className="text-[11px] text-text-secondary italic mt-0.5">{exp.notes}</p>}
                   </div>
                 ))}
               </div>
@@ -315,16 +395,16 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
           {/* Action Steps Checklist View */}
           {actionSteps.length > 0 && (
             <div className="space-y-1.5 pt-1">
-              <span className="text-amber-300 font-medium flex items-center gap-1 font-mono text-[11px]">
+              <span className="text-accent font-medium flex items-center gap-1 font-mono text-[11px]">
                 <span>⚡</span> Next Actions ({actionSteps.length}):
               </span>
-              <div className="space-y-1 pl-2.5 border-l-2 border-amber-400/40">
+              <div className="space-y-1 pl-2.5 border-l-2 border-accent/40">
                 {actionSteps.map((step, idx) => (
-                  <div key={idx} className="flex items-baseline gap-2 text-slate-200">
-                    <span className="text-[10px] font-mono text-amber-400 font-bold shrink-0">#{idx + 1}</span>
+                  <div key={idx} className="flex items-baseline gap-2 text-text-primary">
+                    <span className="text-[10px] font-mono text-accent font-bold shrink-0">#{idx + 1}</span>
                     <span className="leading-snug">{step.content}</span>
                     {step.effort_value && (
-                      <span className="text-[9px] font-mono text-slate-400 bg-white/[0.06] border border-white/[0.08] px-1.5 py-0.2 rounded shrink-0">
+                      <span className="text-[9px] font-mono text-text-muted bg-surface-subtle border border-border-subtle px-1.5 py-0.2 rounded shrink-0">
                         ⏱ {step.effort_value} {step.effort_unit || 'hr'}
                       </span>
                     )}
@@ -335,32 +415,89 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
           )}
 
           {isCreate && exploreTopics.length === 0 && actionSteps.length === 0 && (
-            <div className="text-[11px] text-slate-400 italic bg-white/[0.03] p-2 rounded border border-dashed border-white/[0.08]">
-              No Explore topics or Next actions attached yet. Click <strong className="text-slate-200">Edit ✎</strong> below to add research questions or action steps!
+            <div className="text-[11px] text-text-muted italic bg-surface-subtle p-2 rounded-lg border border-dashed border-border-subtle">
+              No Explore topics or Next actions attached yet. Click <strong className="text-text-primary">Edit ✎</strong> below to add research questions or action steps!
             </div>
           )}
         </div>
       ) : (
         /* Edit Mode */
-        <div className="space-y-2.5 pt-1 border-t border-white/[0.08]">
+        <div className="space-y-2.5 pt-1 border-t border-border-subtle">
+          {/* Edge Edit Form */}
+          {isEdgeCreate && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Source Item (From)</label>
+                  <select
+                    value={fromItemId}
+                    onChange={e => setFromItemId(e.target.value)}
+                    className="w-full bg-surface-input border border-border-subtle rounded-lg px-2.5 py-1 text-text-primary text-xs outline-none focus:border-accent cursor-pointer"
+                  >
+                    {items.map(i => (
+                      <option key={i.id} value={i.id}>{i.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Target Item (To)</label>
+                  <select
+                    value={toItemId}
+                    onChange={e => setToItemId(e.target.value)}
+                    className="w-full bg-surface-input border border-border-subtle rounded-lg px-2.5 py-1 text-text-primary text-xs outline-none focus:border-accent cursor-pointer"
+                  >
+                    {items.map(i => (
+                      <option key={i.id} value={i.id}>{i.title}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Relation Type</label>
+                <select
+                  value={relationType}
+                  onChange={e => setRelationType(e.target.value)}
+                  className="w-full bg-surface-input border border-border-subtle rounded-lg px-2.5 py-1 text-text-primary text-xs outline-none focus:border-accent font-mono cursor-pointer"
+                >
+                  {['depends_on', 'supports', 'contradicts', 'relates_to'].map(rt => (
+                    <option key={rt} value={rt}>{rt.replace(/_/g, ' ')}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Rationale / Note (Optional)</label>
+                <textarea
+                  value={edgeNote}
+                  onChange={e => setEdgeNote(e.target.value)}
+                  rows={2}
+                  placeholder="Why does this relationship exist..."
+                  className="w-full bg-surface-input border border-border-subtle rounded-lg px-2.5 py-1 text-text-primary text-xs outline-none focus:border-accent resize-none"
+                />
+              </div>
+            </div>
+          )}
+
           {isExploreCreate && (
             <div className="space-y-2">
               <div>
-                <label className="block text-[10px] uppercase font-mono text-purple-300 mb-0.5">Explore Topic Title</label>
+                <label className="block text-[10px] uppercase font-mono text-purple-400 mb-0.5">Explore Topic Title</label>
                 <input
                   type="text"
                   value={title}
                   onChange={e => setTitle(e.target.value)}
-                  className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2.5 py-1 text-slate-100 text-xs outline-none focus:border-purple-400/50"
+                  className="w-full bg-surface-input border border-border-subtle rounded-lg px-2.5 py-1 text-text-primary text-xs outline-none focus:border-purple-400 font-mono"
                 />
               </div>
               <div>
-                <label className="block text-[10px] uppercase font-mono text-purple-300 mb-0.5">Findings / Research Notes</label>
+                <label className="block text-[10px] uppercase font-mono text-purple-400 mb-0.5">Findings / Research Notes</label>
                 <textarea
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
                   rows={3}
-                  className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2.5 py-1 text-slate-100 text-xs outline-none focus:border-purple-400/50 resize-none"
+                  className="w-full bg-surface-input border border-border-subtle rounded-lg px-2.5 py-1 text-text-primary text-xs outline-none focus:border-purple-400 resize-none"
                 />
               </div>
             </div>
@@ -368,12 +505,12 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
           {isCreate && (
             <div>
-              <label className="block text-[10px] uppercase font-mono text-slate-400 mb-0.5">Epic Title</label>
+              <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Epic Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2.5 py-1 text-slate-100 text-xs outline-none focus:border-amber-400/50 font-semibold"
+                className="w-full bg-surface-input border border-border-subtle rounded-lg px-2.5 py-1 text-text-primary text-xs outline-none focus:border-accent font-semibold"
               />
             </div>
           )}
@@ -381,11 +518,11 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
           {isCreate && (
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[10px] uppercase font-mono text-slate-400 mb-0.5">Sector</label>
+                <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Sector</label>
                 <select
                   value={sectorId}
                   onChange={e => setSectorId(e.target.value)}
-                  className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2 py-1 text-slate-100 text-xs outline-none"
+                  className="w-full bg-surface-input border border-border-subtle rounded-lg px-2 py-1 text-text-primary text-xs outline-none cursor-pointer"
                 >
                   {sectors.map(s => (
                     <option key={s.id} value={s.id}>{s.icon ? `${s.icon} ` : ''}{s.name}</option>
@@ -394,11 +531,11 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
               </div>
 
               <div>
-                <label className="block text-[10px] uppercase font-mono text-slate-400 mb-0.5">Status</label>
+                <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Status</label>
                 <select
                   value={status}
                   onChange={e => setStatus(e.target.value as ItemStatus)}
-                  className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2 py-1 text-slate-100 text-xs outline-none"
+                  className="w-full bg-surface-input border border-border-subtle rounded-lg px-2 py-1 text-text-primary text-xs outline-none cursor-pointer"
                 >
                   {(['queued', 'active', 'paused', 'blocked', 'done'] as ItemStatus[]).map(st => (
                     <option key={st} value={st}>{st}</option>
@@ -410,7 +547,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
           {isUpdate && (
             <div>
-              <label className="block text-[10px] uppercase font-mono text-slate-400 mb-0.5">Progress: {progress}%</label>
+              <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Progress: {progress}%</label>
               <input
                 type="range"
                 min="0"
@@ -418,30 +555,30 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
                 step="5"
                 value={progress}
                 onChange={e => setProgress(Number(e.target.value))}
-                className="w-full progress-range accent-amber-400"
+                className="w-full progress-range accent-accent"
               />
             </div>
           )}
 
           {/* Explore Topics Editor */}
           {isCreate && (
-            <div className="space-y-2 p-2.5 rounded-lg bg-purple-950/20 border border-purple-500/20">
-              <label className="block text-[10px] uppercase font-mono text-purple-300 font-bold flex items-center gap-1">
+            <div className="space-y-2 p-2.5 rounded-xl bg-surface-subtle border border-purple-500/20">
+              <label className="block text-[10px] uppercase font-mono text-purple-400 font-bold flex items-center gap-1">
                 <span>🔬</span> Explore Topics (Research & Discovery)
               </label>
               
               {exploreTopics.length > 0 && (
                 <div className="space-y-1.5">
                   {exploreTopics.map((exp, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded bg-black/40 border border-purple-500/20 text-xs">
+                    <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-surface-card border border-purple-500/20 text-xs">
                       <div>
-                        <span className="font-semibold text-purple-200">{exp.title}</span>
-                        {exp.notes && <p className="text-[11px] text-slate-400 italic mt-0.5">{exp.notes}</p>}
+                        <span className="font-semibold text-purple-400">{exp.title}</span>
+                        {exp.notes && <p className="text-[11px] text-text-secondary italic mt-0.5">{exp.notes}</p>}
                       </div>
                       <button
                         type="button"
                         onClick={() => handleRemoveExplore(idx)}
-                        className="text-slate-400 hover:text-red-400 px-1 text-xs cursor-pointer"
+                        className="text-text-muted hover:text-blocked px-1 text-xs cursor-pointer"
                         title="Remove explore topic"
                       >
                         ✕
@@ -458,7 +595,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
                   value={newExploreTitle}
                   onChange={e => setNewExploreTitle(e.target.value)}
                   placeholder="Explore topic title (e.g. Research visa options)..."
-                  className="w-full bg-slate-950/70 border border-purple-500/20 rounded px-2.5 py-1 text-xs text-purple-100 placeholder-purple-400/40 outline-none focus:border-purple-400/60 font-mono"
+                  className="w-full bg-surface-input border border-purple-500/20 rounded-lg px-2.5 py-1 text-xs text-text-primary placeholder:text-text-muted outline-none focus:border-purple-400 font-mono"
                 />
                 <div className="flex gap-1.5">
                   <input
@@ -466,13 +603,13 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
                     value={newExploreNotes}
                     onChange={e => setNewExploreNotes(e.target.value)}
                     placeholder="Findings / questions (optional)..."
-                    className="flex-1 bg-slate-950/70 border border-purple-500/20 rounded px-2.5 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-purple-400/60"
+                    className="flex-1 bg-surface-input border border-purple-500/20 rounded-lg px-2.5 py-1 text-xs text-text-primary placeholder:text-text-muted outline-none focus:border-purple-400"
                   />
                   <button
                     type="button"
                     onClick={handleAddExplore}
                     disabled={!newExploreTitle.trim()}
-                    className="px-2.5 py-1 rounded bg-purple-600/60 hover:bg-purple-600 text-purple-100 font-semibold text-xs disabled:opacity-30 transition-colors cursor-pointer"
+                    className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs disabled:opacity-40 transition-colors cursor-pointer"
                   >
                     + Add Explore
                   </button>
@@ -483,24 +620,24 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
           {/* Action Steps Editor */}
           {(isCreate || isAddSteps) && (
-            <div className="space-y-2 p-2.5 rounded-lg bg-amber-950/15 border border-amber-500/20">
-              <label className="block text-[10px] uppercase font-mono text-amber-300 font-bold flex items-center gap-1">
+            <div className="space-y-2 p-2.5 rounded-xl bg-surface-subtle border border-accent/20">
+              <label className="block text-[10px] uppercase font-mono text-accent font-bold flex items-center gap-1">
                 <span>⚡</span> Next Actions (Execution Steps)
               </label>
               <div className="space-y-1.5">
                 {actionSteps.map((step, idx) => (
                   <div key={idx} className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-mono text-amber-400 font-bold shrink-0">#{idx + 1}</span>
+                    <span className="text-[10px] font-mono text-accent font-bold shrink-0">#{idx + 1}</span>
                     <input
                       type="text"
                       value={step.content}
                       onChange={e => handleUpdateStepContent(idx, e.target.value)}
-                      className="flex-1 bg-slate-950/70 border border-white/[0.12] rounded px-2 py-0.5 text-xs text-slate-200 outline-none focus:border-amber-400/50"
+                      className="flex-1 bg-surface-input border border-border-subtle rounded-lg px-2 py-0.5 text-xs text-text-primary outline-none focus:border-accent"
                     />
                     <button
                       type="button"
                       onClick={() => handleRemoveStep(idx)}
-                      className="text-slate-400 hover:text-red-400 px-1 text-xs cursor-pointer"
+                      className="text-text-muted hover:text-blocked px-1 text-xs cursor-pointer"
                       title="Remove step"
                     >
                       ✕
@@ -516,13 +653,13 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
                     onChange={e => setNewStepContent(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddStep() } }}
                     placeholder="Add action step and press Enter..."
-                    className="flex-1 bg-slate-950/40 border border-white/[0.08] rounded px-2 py-0.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-amber-400/50"
+                    className="flex-1 bg-surface-input border border-border-subtle rounded-lg px-2 py-0.5 text-xs text-text-primary placeholder:text-text-muted outline-none focus:border-accent"
                   />
                   <button
                     type="button"
                     onClick={handleAddStep}
                     disabled={!newStepContent.trim()}
-                    className="px-2 py-0.5 rounded bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-30 text-slate-300 text-xs font-mono cursor-pointer"
+                    className="px-2 py-0.5 rounded-lg bg-surface-raised hover:bg-surface-subtle border border-border-subtle disabled:opacity-40 text-text-secondary text-xs font-mono cursor-pointer"
                   >
                     + Add
                   </button>
@@ -533,12 +670,12 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
           {isCreate && (
             <div>
-              <label className="block text-[10px] uppercase font-mono text-slate-400 mb-0.5">Notes</label>
+              <label className="block text-[10px] uppercase font-mono text-text-muted mb-0.5">Notes</label>
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 rows={2}
-                className="w-full bg-slate-950/70 border border-white/[0.15] rounded px-2.5 py-1 text-slate-100 text-xs outline-none focus:border-amber-400/50 resize-none"
+                className="w-full bg-surface-input border border-border-subtle rounded-lg px-2.5 py-1 text-text-primary text-xs outline-none focus:border-accent resize-none"
               />
             </div>
           )}
@@ -547,7 +684,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
 
       {/* Error Notice */}
       {error && (
-        <div className="text-[11px] text-red-400 bg-red-500/15 border border-red-500/30 p-2 rounded">
+        <div className="text-[11px] text-blocked bg-blocked-dim border border-blocked/30 p-2 rounded-lg">
           {error}
         </div>
       )}
@@ -565,7 +702,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
               setIsEditing(!isEditing)
             }}
             disabled={isSubmitting}
-            className="px-2.5 py-1 rounded-lg text-text-muted hover:text-text-primary border border-border-subtle hover:border-border-strong font-mono text-[11px] transition-colors"
+            className="px-2.5 py-1 rounded-lg text-text-muted hover:text-text-primary border border-border-subtle hover:border-border-strong font-mono text-[11px] transition-colors cursor-pointer"
           >
             {isEditing ? 'Cancel Edit' : 'Edit ✎'}
           </button>
@@ -573,7 +710,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
             type="button"
             onClick={handleReject}
             disabled={isSubmitting}
-            className="px-3 py-1 rounded-lg bg-surface-subtle hover:bg-surface-raised text-text-secondary border border-border-subtle font-semibold text-[11px] transition-colors"
+            className="px-3 py-1 rounded-lg bg-surface-subtle hover:bg-surface-raised text-text-secondary border border-border-subtle font-semibold text-[11px] transition-colors cursor-pointer"
           >
             Reject ✕
           </button>
@@ -581,7 +718,7 @@ export const ActionDiffCard: React.FC<ActionDiffCardProps> = ({ action, onResolv
             type="button"
             onClick={handleAccept}
             disabled={isSubmitting}
-            className="px-3.5 py-1 rounded-lg bg-accent hover:bg-accent-hover text-white font-bold text-[11px] transition-all shadow-soft active:scale-95"
+            className="px-3.5 py-1 rounded-lg bg-accent hover:bg-accent-hover text-white font-bold text-[11px] transition-all shadow-soft active:scale-95 cursor-pointer"
           >
             {isSubmitting ? 'Applying...' : 'Accept ✓'}
           </button>

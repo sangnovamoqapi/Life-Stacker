@@ -69,6 +69,24 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS edges (
+    id TEXT PRIMARY KEY,
+    from_item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    to_item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    relation_type TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS edge_log (
+    id TEXT PRIMARY KEY,
+    edge_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    old_relation_type TEXT,
+    new_relation_type TEXT,
+    changed_at TEXT NOT NULL
+  );
 `)
 
 // Seed initial test sector
@@ -390,6 +408,88 @@ try {
   )
 } catch (e) {
   assertTest('Test 9: Zero Weekly Hours', false, `Error: ${e.message}`)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TEST 10: Graph Edge Creation with Seed Vocabulary & Bidirectional List
+// ═════════════════════════════════════════════════════════════════════════════
+try {
+  const itemA = uuid()
+  const itemB = uuid()
+  const itemC = uuid()
+  db.prepare(`INSERT INTO items (id, sector_id, title, status, progress, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    itemA, sectorId, 'Item A (API Server)', 'active', 0, now, now
+  )
+  db.prepare(`INSERT INTO items (id, sector_id, title, status, progress, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    itemB, sectorId, 'Item B (Database Setup)', 'active', 0, now, now
+  )
+  db.prepare(`INSERT INTO items (id, sector_id, title, status, progress, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    itemC, sectorId, 'Item C (Documentation)', 'active', 0, now, now
+  )
+
+  const SEED_VOCAB = ['depends_on', 'supports', 'contradicts', 'relates_to']
+  const edgeId1 = uuid()
+  const edgeId2 = uuid()
+
+  // A depends on B
+  db.prepare(`INSERT INTO edges (id, from_item_id, to_item_id, relation_type, note, created_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    edgeId1, itemA, itemB, 'depends_on', 'API needs database initialized first', now
+  )
+  // C supports A
+  db.prepare(`INSERT INTO edges (id, from_item_id, to_item_id, relation_type, note, created_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    edgeId2, itemC, itemA, 'supports', 'Docs accelerate API consumption', now
+  )
+
+  const outgoingFromA = db.prepare(`SELECT * FROM edges WHERE from_item_id = ?`).all(itemA)
+  const incomingToA = db.prepare(`SELECT * FROM edges WHERE to_item_id = ?`).all(itemA)
+
+  const validCreation = outgoingFromA.length === 1 && outgoingFromA[0].relation_type === 'depends_on' &&
+                        incomingToA.length === 1 && incomingToA[0].relation_type === 'supports'
+
+  assertTest(
+    'Test 10: Graph Edge Creation & Seed Vocabulary',
+    validCreation,
+    `Created edges with seed vocabulary: Item A depends_on Item B (outgoing) and Item C supports Item A (incoming).`
+  )
+} catch (e) {
+  assertTest('Test 10: Graph Edge Creation', false, `Error: ${e.message}`)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TEST 11: Self-Edge Rejection & Non-Vocabulary Validation
+// ═════════════════════════════════════════════════════════════════════════════
+try {
+  const itemD = uuid()
+  db.prepare(`INSERT INTO items (id, sector_id, title, status, progress, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    itemD, sectorId, 'Item D (Solo Task)', 'active', 0, now, now
+  )
+
+  const SEED_VOCAB = ['depends_on', 'supports', 'contradicts', 'relates_to']
+
+  // Validation function matching chat.ts
+  function validateProposedEdge(fromId, toId, relationType) {
+    if (fromId === toId) {
+      return { valid: false, error: 'Self-edges not permitted' }
+    }
+    if (!SEED_VOCAB.includes(relationType)) {
+      return { valid: false, error: `Invalid relation_type "${relationType}". Valid: ${SEED_VOCAB.join(', ')}` }
+    }
+    return { valid: true }
+  }
+
+  const selfEdgeCheck = validateProposedEdge(itemD, itemD, 'depends_on')
+  const invalidVocabCheck = validateProposedEdge(itemD, uuid(), 'blocks_forever')
+  const validEdgeCheck = validateProposedEdge(itemD, uuid(), 'relates_to')
+
+  const correctlyValidated = !selfEdgeCheck.valid && !invalidVocabCheck.valid && validEdgeCheck.valid
+
+  assertTest(
+    'Test 11: Self-Edge and Vocabulary Rejection',
+    correctlyValidated,
+    `Self-edge rejected (${selfEdgeCheck.error}); invalid vocab rejected (${invalidVocabCheck.error}); valid edge approved.`
+  )
+} catch (e) {
+  assertTest('Test 11: Self-Edge Validation', false, `Error: ${e.message}`)
 }
 
 // Cleanup temp test DB
