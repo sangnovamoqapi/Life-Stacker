@@ -50,12 +50,12 @@ test.describe('Life Stack 2.0 Electron QA & UI Sweep', () => {
     // Click Calendar view
     await page.click('button:has-text("Calendar")')
     await page.waitForTimeout(600)
-    expect(await page.isVisible('text=Gantt Horizons') || await page.isVisible('text=SECTOR TREE')).toBe(true)
+    expect(await page.isVisible('text=Calendar & Scheduling') || await page.isVisible('text=Calendar Grid')).toBe(true)
 
     // Click Journal view
     await page.click('button:has-text("Journal")')
     await page.waitForTimeout(600)
-    expect(await page.isVisible('text=What are you thinking?') && await page.isVisible('text=Danger Mode')).toBe(true)
+    expect(await page.isVisible('text=Danger Mode') && (await page.isVisible('text=entries') || await page.isVisible('textarea'))).toBe(true)
 
     // Click Lanes view
     await page.click('button:has-text("Lanes")')

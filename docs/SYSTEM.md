@@ -29,6 +29,7 @@ LifeStack is a local-first desktop life operating system built on a 4-tier hiera
 | Theme Architecture | Flat warm-neutral minimal token system with instant runtime light/dark switching and WCAG AA contrast | [ADR 022](../ARCHITECTURE_DECISIONS.md#adr-022-flat-warm-neutral-minimal-dual-mode-token-system--runtime-theme-switching) |
 | Graph Edges & Chat | Propose-never-commit diff card flow for graph edges, compact ID-to-title index, and seed vocabulary defense | [ADR 023](../ARCHITECTURE_DECISIONS.md#adr-023-graph-edges-in-chat--compact-id-indexing-amendment-17) |
 | Journal & Calendar | Zero-AI Journal with local media attachments, read-only chat querying, Today/Week toggle, and Gantt horizon timeline | [ADR 024](../ARCHITECTURE_DECISIONS.md#adr-024-journal-system-with-local-attachments-todayweek-toggle--calendargantt-horizons-amendment-20) |
+| Epics & Card Layout | Manual priority_rank drag-reordering for Epics, uniform card sizing across Lanes, and full 7-day action planner | [ADR 025](../ARCHITECTURE_DECISIONS.md#adr-025-epics-drag-reorder-uniform-card-sizing-full-7-day-planner--minimalist-green-journal-amendments-2122) |
 
 ## Cost model
 

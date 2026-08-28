@@ -27,6 +27,7 @@ export const OverviewView: React.FC = () => {
     settings, 
     openItemModal, 
     updateItem, 
+    reorderItem,
     toggleNextItem, 
     promoteToToday, 
     demoteFromToday, 
@@ -60,6 +61,10 @@ export const OverviewView: React.FC = () => {
       return updated
     })
   }
+
+  // Drag & drop state for Epics panel
+  const [draggedEpicId, setDraggedEpicId] = useState<string | null>(null)
+  const [dragOverEpicId, setDragOverEpicId] = useState<string | null>(null)
 
   // Drag & drop state for Today panel
   const [draggedTodayId, setDraggedTodayId] = useState<string | null>(null)
@@ -188,15 +193,7 @@ export const OverviewView: React.FC = () => {
         const todayStr = new Date().toISOString().slice(0, 10)
         return item.status === 'today' && dateStr === todayStr
       })
-      if (matchingItems.length > 0) {
-        groups.push({ dayName, dateStr, items: matchingItems })
-      }
-    }
-
-    const assignedIds = new Set(groups.flatMap(g => g.items.map(i => i.id)))
-    const unassigned = weekItems.filter(i => !assignedIds.has(i.id))
-    if (unassigned.length > 0) {
-      groups.push({ dayName: 'This Week (Flexible)', dateStr: '', items: unassigned })
+      groups.push({ dayName, dateStr, items: matchingItems })
     }
 
     return groups
@@ -235,6 +232,43 @@ export const OverviewView: React.FC = () => {
         }
       })
     }
+  }
+
+  // ─── Drag and Drop Handlers for Epics Panel ───
+  const handleEpicDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('text/plain', id)
+    setDraggedEpicId(id)
+  }
+
+  const handleEpicDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    if (dragOverEpicId !== id) {
+      setDragOverEpicId(id)
+    }
+  }
+
+  const handleEpicDrop = async (e: React.DragEvent, targetEpic: Item) => {
+    e.preventDefault()
+    const sourceId = e.dataTransfer.getData('text/plain') || draggedEpicId
+    if (!sourceId || sourceId === targetEpic.id) {
+      setDraggedEpicId(null)
+      setDragOverEpicId(null)
+      return
+    }
+
+    const sourceEpic = items.find(i => i.id === sourceId)
+    if (sourceEpic) {
+      await reorderItem(sourceId, targetEpic.priority_rank)
+      showToast(`Updated rank: "${sourceEpic.title}" is now #${targetEpic.priority_rank}`, 'info')
+    }
+
+    setDraggedEpicId(null)
+    setDragOverEpicId(null)
+  }
+
+  const handleEpicDragEnd = () => {
+    setDraggedEpicId(null)
+    setDragOverEpicId(null)
   }
 
   // ─── Drag and Drop Handlers for Today Panel ───
@@ -300,7 +334,7 @@ export const OverviewView: React.FC = () => {
             </div>
             
             <div className="flex items-center gap-3">
-              <span className="text-[11px] font-mono text-text-muted">Ranked by Priority</span>
+              <span className="text-[11px] font-mono text-text-muted">Drag to Reorder Rank</span>
               <button
                 type="button"
                 onClick={() => togglePanelCollapse('epics')}
@@ -320,16 +354,28 @@ export const OverviewView: React.FC = () => {
                 const researchProg = getResearchProgress(epic.id)
                 const executionProg = getExecutionProgress(epic.id)
                 const stage = getEpicStage(epic.id)
+                const isDragging = draggedEpicId === epic.id
+                const isDragOver = dragOverEpicId === epic.id
 
                 return (
                   <div
                     key={epic.id}
+                    draggable
+                    onDragStart={(e) => handleEpicDragStart(e, epic.id)}
+                    onDragOver={(e) => handleEpicDragOver(e, epic.id)}
+                    onDrop={(e) => handleEpicDrop(e, epic)}
+                    onDragEnd={handleEpicDragEnd}
                     onClick={() => openItemModal(epic.id)}
-                    className="card-dominant cursor-pointer transition-all hover:scale-[1.005] p-3 rounded-lg"
+                    className={`card-dominant cursor-pointer transition-all p-3 rounded-lg ${
+                      isDragging ? 'opacity-40 scale-95' : ''
+                    } ${
+                      isDragOver ? 'border-t-2 border-accent bg-surface-raised' : 'hover:scale-[1.005]'
+                    }`}
                     style={{ borderLeft: `3px solid ${secColor}` }}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-text-muted text-xs select-none cursor-grab active:cursor-grabbing">⠿</span>
                         <span className="text-xs font-mono font-bold text-accent">#{epic.priority_rank}</span>
                         <span className="text-xs font-semibold text-text-primary truncate">{epic.title}</span>
                       </div>
@@ -457,157 +503,150 @@ export const OverviewView: React.FC = () => {
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            3. BOTTOM-LEFT: NEXT ACTIONS PANEL (Due Date & Effort Sort)
+            3 & 4. BOTTOM HALF: TODAY (SPLIT 2-COL) OR WEEK (7-DAY STRIP)
            ═══════════════════════════════════════════════════════════════════ */}
-        <div className={`lane-glass rounded-xl p-4 flex flex-col transition-all ${
-          collapsedPanels.next ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
-        }`}>
-          <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-base">⚡</span>
-              <h2 className="font-sans font-bold text-text-primary text-sm">Next Backlog</h2>
-              <span className="text-xs font-mono font-bold text-accent bg-accent-subtle px-2 py-0.5 rounded-full border border-accent/25">
-                {activeNextItems.length} Open
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] font-mono text-text-muted">Due-Date & Effort Sort</span>
-              <button
-                type="button"
-                onClick={() => togglePanelCollapse('next')}
-                className="text-xs text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
-                title={collapsedPanels.next ? 'Expand panel' : 'Collapse panel'}
-              >
-                {collapsedPanels.next ? '＋' : '−'}
-              </button>
-            </div>
-          </div>
-
-          {!collapsedPanels.next && (
-            <div className="flex-1 overflow-y-auto pt-3 space-y-2 pr-1">
-              {activeNextItems.map(nextItem => {
-                const parentEpic = getEpic(nextItem.epic_id)
-                const parentSector = getSector(parentEpic?.sector_id || '')
-                const sectorColor = parentSector ? `var(--color-${parentSector.color})` : 'var(--accent)'
-
-                return (
-                  <div
-                    key={nextItem.id}
-                    className="flex items-center justify-between p-2.5 rounded-lg bg-surface-card border border-border-subtle hover:border-accent/30 transition-all gap-2 shadow-soft"
+        {todayOrWeek === 'today' ? (
+          <>
+            {/* 3. BOTTOM-LEFT: NEXT ACTIONS PANEL (Due Date & Effort Sort) */}
+            <div className={`lane-glass rounded-xl p-4 flex flex-col transition-all ${
+              collapsedPanels.next ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
+            }`}>
+              <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">⚡</span>
+                  <h2 className="font-sans font-bold text-text-primary text-sm">Next Backlog</h2>
+                  <span className="text-xs font-mono font-bold text-accent bg-accent-subtle px-2 py-0.5 rounded-full border border-accent/25">
+                    {activeNextItems.length} Open
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] font-mono text-text-muted">Due-Date & Effort Sort</span>
+                  <button
+                    type="button"
+                    onClick={() => togglePanelCollapse('next')}
+                    className="text-xs text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
+                    title={collapsedPanels.next ? 'Expand panel' : 'Collapse panel'}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleTodayDone(nextItem)}
-                        className="w-4 h-4 rounded-full border-2 border-accent hover:bg-accent/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
-                        title="Complete task"
-                      />
+                    {collapsedPanels.next ? '＋' : '−'}
+                  </button>
+                </div>
+              </div>
 
-                      <div className="min-w-0 flex-1">
-                        <span className="text-xs font-semibold text-text-primary block truncate">
-                          {nextItem.title}
-                        </span>
-                        <span className="text-[10px] font-mono text-text-muted flex items-center gap-1 mt-0.5 truncate">
-                          <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
-                        </span>
-                      </div>
-                    </div>
+              {!collapsedPanels.next && (
+                <div className="flex-1 overflow-y-auto pt-3 space-y-2 pr-1">
+                  {activeNextItems.map(nextItem => {
+                    const parentEpic = getEpic(nextItem.epic_id)
+                    const parentSector = getSector(parentEpic?.sector_id || '')
+                    const sectorColor = parentSector ? `var(--color-${parentSector.color})` : 'var(--accent)'
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      {nextItem.time_estimate_value && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-surface-subtle text-text-secondary border border-border-subtle">
-                          ⏱ {formatEffortBadge(nextItem.time_estimate_value, (nextItem.time_estimate_unit as any) || 'hours')}
-                        </span>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => handlePromoteClick(nextItem)}
-                        className="px-2.5 py-1 text-xs font-mono font-bold text-white bg-accent hover:bg-accent-hover rounded-lg shadow-soft transition-all cursor-pointer flex items-center gap-1"
-                        title="Promote to Today Focus"
+                    return (
+                      <div
+                        key={nextItem.id}
+                        className="flex items-center justify-between p-2.5 rounded-lg bg-surface-card border border-border-subtle hover:border-accent/30 transition-all gap-2 shadow-soft"
                       >
-                        <span>⭐ Today</span>
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTodayDone(nextItem)}
+                            className="w-4 h-4 rounded-full border-2 border-accent hover:bg-accent/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                            title="Complete task"
+                          />
 
-              {activeNextItems.length === 0 && (
-                <div className="text-center py-12 text-text-muted text-xs font-mono italic">
-                  No open next items. Spawn from explore research or add to epics.
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs font-semibold text-text-primary block truncate">
+                              {nextItem.title}
+                            </span>
+                            <span className="text-[10px] font-mono text-text-muted flex items-center gap-1 mt-0.5 truncate">
+                              <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
+                              {nextItem.due_date && (
+                                <span className="text-text-muted ml-1.5">📅 {nextItem.due_date}</span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {nextItem.time_estimate_value && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-surface-subtle text-text-secondary border border-border-subtle">
+                              ⏱ {formatEffortBadge(nextItem.time_estimate_value, (nextItem.time_estimate_unit as any) || 'hours')}
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handlePromoteClick(nextItem)}
+                            className="px-2.5 py-1 text-xs font-mono font-bold text-white bg-accent hover:bg-accent-hover rounded-lg shadow-soft transition-all cursor-pointer flex items-center gap-1"
+                            title="Promote to Today Focus"
+                          >
+                            <span>⭐ Today</span>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {activeNextItems.length === 0 && (
+                    <div className="text-center py-12 text-text-muted text-xs font-mono italic">
+                      No open next items. Spawn from explore research or add to epics.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            4. BOTTOM-RIGHT: TODAY / WEEK FOCUS PANEL (Governed by today_cap)
-           ═══════════════════════════════════════════════════════════════════ */}
-        <div data-tour="today-panel" className={`lane-glass rounded-xl p-4 flex flex-col transition-all ${
-          collapsedPanels.today ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
-        }`}>
-          <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
-            <div className="flex items-center gap-2.5">
-              <span className="text-base">🎯</span>
-              <div className="flex items-center p-0.5 bg-surface-subtle border border-border-subtle rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setTodayOrWeek('today')}
-                  className={`px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold transition-all cursor-pointer ${
-                    todayOrWeek === 'today'
-                      ? 'bg-accent text-white shadow-soft'
-                      : 'text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTodayOrWeek('week')}
-                  className={`px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold transition-all cursor-pointer ${
-                    todayOrWeek === 'week'
-                      ? 'bg-accent text-white shadow-soft'
-                      : 'text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  Week
-                </button>
+            {/* 4. BOTTOM-RIGHT: TODAY FOCUS PANEL (Governed by today_cap) */}
+            <div data-tour="today-panel" className={`lane-glass rounded-xl p-4 flex flex-col transition-all ${
+              collapsedPanels.today ? 'min-h-[64px] max-h-[64px]' : 'min-h-0'
+            }`}>
+              <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-base">🎯</span>
+                  <div className="flex items-center p-0.5 bg-surface-subtle border border-border-subtle rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setTodayOrWeek('today')}
+                      className={`px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold transition-all cursor-pointer ${
+                        todayOrWeek === 'today'
+                          ? 'bg-accent text-white shadow-soft'
+                          : 'text-text-muted hover:text-text-primary'
+                      }`}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTodayOrWeek('week')}
+                      className={`px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold transition-all cursor-pointer ${
+                        todayOrWeek === 'week'
+                          ? 'bg-accent text-white shadow-soft'
+                          : 'text-text-muted hover:text-text-primary'
+                      }`}
+                    >
+                      Week
+                    </button>
+                  </div>
+
+                  <span className="text-xs font-mono font-bold text-accent bg-accent-subtle px-2 py-0.5 rounded-full border border-accent/30">
+                    {todayItems.length} / {todayCap}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] font-mono text-text-muted hidden sm:inline">Drag to Reorder</span>
+                  <button
+                    type="button"
+                    onClick={() => togglePanelCollapse('today')}
+                    className="text-xs text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
+                    title={collapsedPanels.today ? 'Expand panel' : 'Collapse panel'}
+                  >
+                    {collapsedPanels.today ? '＋' : '−'}
+                  </button>
+                </div>
               </div>
 
-              {todayOrWeek === 'today' ? (
-                <span className="text-xs font-mono font-bold text-accent bg-accent-subtle px-2 py-0.5 rounded-full border border-accent/30">
-                  {todayItems.length} / {todayCap}
-                </span>
-              ) : (
-                <span className="text-xs font-mono font-bold text-text-secondary bg-surface-subtle px-2 py-0.5 rounded-full border border-border-subtle">
-                  {weekItems.length} {weekItems.length === 1 ? 'action' : 'actions'}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3">
-              {todayOrWeek === 'today' && (
-                <span className="text-[11px] font-mono text-text-muted hidden sm:inline">Drag to Reorder</span>
-              )}
-              <button
-                type="button"
-                onClick={() => togglePanelCollapse('today')}
-                className="text-xs text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
-                title={collapsedPanels.today ? 'Expand panel' : 'Collapse panel'}
-              >
-                {collapsedPanels.today ? '＋' : '−'}
-              </button>
-            </div>
-          </div>
-
-          {!collapsedPanels.today && (
-            <div className="flex-1 overflow-y-auto pt-3 space-y-2.5 pr-1">
-              {todayOrWeek === 'today' ? (
-                /* Today 3-item focus view */
-                <>
+              {!collapsedPanels.today && (
+                <div className="flex-1 overflow-y-auto pt-3 space-y-2.5 pr-1">
                   {todayItems.map(item => {
                     const parentEpic = getEpic(item.epic_id)
                     const parentSector = getSector(parentEpic?.sector_id || '')
@@ -674,88 +713,146 @@ export const OverviewView: React.FC = () => {
                       Nothing committed for today. Click ⭐ Today on any Next action on the left.
                     </div>
                   )}
-                </>
-              ) : (
-                /* Week group view */
-                <div className="space-y-4">
-                  {weekGrouped.map(group => (
-                    <div key={group.dayName} className="space-y-2">
-                      <div className="flex items-center justify-between px-1">
-                        <span className="text-[11px] font-mono font-bold text-accent uppercase tracking-wider">
-                          {group.dayName} {group.dateStr ? `· ${new Date(group.dateStr + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
-                        </span>
-                        <span className="text-[10px] font-mono text-text-muted">
-                          {group.items.length} {group.items.length === 1 ? 'task' : 'tasks'}
-                        </span>
-                      </div>
-
-                      <div className="space-y-2">
-                        {group.items.map(item => {
-                          const parentEpic = getEpic(item.epic_id)
-                          const parentSector = getSector(parentEpic?.sector_id || '')
-                          const sectorColor = parentSector ? `var(--color-${parentSector.color})` : 'var(--accent)'
-
-                          return (
-                            <div
-                              key={item.id}
-                              className="flex items-center justify-between p-2.5 rounded-lg bg-surface-card border border-border-subtle hover:border-accent/40 shadow-soft gap-3 transition-all"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTodayDone(item)}
-                                  className="w-4 h-4 rounded-full border-2 border-border-strong hover:border-accent flex items-center justify-center shrink-0 transition-all cursor-pointer"
-                                  title="Mark done"
-                                />
-
-                                <div className="min-w-0 flex-1">
-                                  <span className="text-xs font-semibold text-text-primary block truncate">
-                                    {item.title}
-                                  </span>
-                                  <span className="text-[10px] font-mono text-text-muted flex items-center gap-1 mt-0.5 truncate">
-                                    <span style={{ color: sectorColor }}>{parentSector?.icon} {parentEpic?.title}</span>
-                                    {item.status === 'today' && (
-                                      <span className="text-[9px] font-bold text-accent bg-accent-subtle px-1.5 py-0.2 rounded border border-accent/20 ml-1">
-                                        TODAY
-                                      </span>
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0">
-                                {item.time_estimate_value && (
-                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-subtle text-text-secondary border border-border-subtle">
-                                    ⏱ {formatEffortBadge(item.time_estimate_value, (item.time_estimate_unit as any) || 'hours')}
-                                  </span>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => openItemModal(item.epic_id)}
-                                  className="text-[10px] font-mono text-text-muted hover:text-text-primary bg-surface-subtle hover:bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle transition-colors cursor-pointer"
-                                  title="Open epic details"
-                                >
-                                  Open ↗
-                                </button>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-
-                  {weekGrouped.length === 0 && (
-                    <div className="text-center py-12 text-text-muted text-xs font-mono italic">
-                      No actions scheduled for this week. Set due dates on next actions or pull into Today.
-                    </div>
-                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          /* ═══════════════════════════════════════════════════════════════════
+              WEEK MODE: UNIFIED FULL-WIDTH 7-DAY CALENDAR STRIP
+             ═══════════════════════════════════════════════════════════════════ */
+          <div data-tour="today-panel" className="col-span-1 lg:col-span-2 lane-glass rounded-xl p-4 flex flex-col transition-all min-h-0">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-base">📅</span>
+                <h2 className="font-sans font-bold text-text-primary text-sm">Weekly Action Calendar</h2>
+                <div className="flex items-center p-0.5 bg-surface-subtle border border-border-subtle rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setTodayOrWeek('today')}
+                    className={`px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold transition-all cursor-pointer ${
+                      todayOrWeek === 'today'
+                        ? 'bg-accent text-white shadow-soft'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTodayOrWeek('week')}
+                    className={`px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold transition-all cursor-pointer ${
+                      todayOrWeek === 'week'
+                        ? 'bg-accent text-white shadow-soft'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    Week
+                  </button>
+                </div>
+
+                <span className="text-xs font-mono text-text-muted hidden sm:inline">
+                  {weekRange.start} → {weekRange.end} ({weekItems.length} tasks scheduled)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-mono text-text-muted">
+                <span>Click ✓ to complete</span>
+              </div>
+            </div>
+
+            {/* 7-Day Columns Strip */}
+            <div className="flex-1 grid grid-cols-7 gap-2.5 pt-3 overflow-y-auto min-h-0">
+              {weekGrouped.map((dayGroup, idx) => {
+                const todayStr = new Date().toISOString().slice(0, 10)
+                const isCurrentDay = dayGroup.dateStr === todayStr
+
+                return (
+                  <div
+                    key={dayGroup.dayName}
+                    className={`rounded-xl p-2.5 flex flex-col overflow-hidden border transition-all ${
+                      isCurrentDay
+                        ? 'bg-surface-raised border-accent shadow-md ring-1 ring-accent/50'
+                        : 'bg-surface-card border-border-subtle'
+                    }`}
+                  >
+                    {/* Day Column Header */}
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-border-subtle shrink-0">
+                      <div>
+                        <span className={`text-xs font-mono font-bold uppercase block ${isCurrentDay ? 'text-accent' : 'text-text-primary'}`}>
+                          {dayGroup.dayName.slice(0, 3)}
+                        </span>
+                        <span className="text-[10px] font-mono text-text-muted">
+                          {dayGroup.dateStr ? dayGroup.dateStr.slice(5) : ''}
+                        </span>
+                      </div>
+
+                      <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
+                        dayGroup.items.length > 0 ? 'bg-accent-subtle text-accent border border-accent/20' : 'text-text-muted'
+                      }`}>
+                        {dayGroup.items.length}
+                      </span>
+                    </div>
+
+                    {/* Day Task Items */}
+                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+                      {dayGroup.items.map(item => {
+                        const parentEpic = getEpic(item.epic_id)
+                        const parentSector = getSector(parentEpic?.sector_id || '')
+                        const sectorColor = parentSector ? `var(--color-${parentSector.color})` : 'var(--accent)'
+                        const isDone = item.status === 'done'
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`p-2 rounded-lg border text-xs flex flex-col gap-1 transition-all shadow-sm ${
+                              isDone
+                                ? 'bg-surface-subtle border-border-subtle opacity-50 line-through'
+                                : 'bg-surface-raised border-border-subtle hover:border-accent/40 text-text-primary'
+                            }`}
+                            style={{ borderLeft: `3px solid ${sectorColor}` }}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleTodayDone(item)}
+                                className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                                  isDone ? 'bg-done border-done text-white' : 'border-accent hover:bg-accent/20'
+                                }`}
+                              >
+                                {isDone && <span className="text-[8px]">✓</span>}
+                              </button>
+
+                              <span className="text-xs font-semibold text-text-primary truncate flex-1" title={item.title}>
+                                {item.title}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-[9px] font-mono text-text-muted pl-5">
+                              <span className="truncate" style={{ color: sectorColor }}>
+                                {parentSector?.icon} {parentEpic?.title}
+                              </span>
+                              {item.status === 'today' && (
+                                <span className="text-[8px] font-mono font-bold text-accent">⭐ TODAY</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {dayGroup.items.length === 0 && (
+                        <div className="h-full flex items-center justify-center text-[10px] font-mono text-text-muted/40 italic text-center py-4">
+                          No tasks
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
       </div>
 

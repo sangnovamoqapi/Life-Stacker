@@ -301,3 +301,27 @@ This document tracks all foundational architecture, design, and engineering deci
      - Built `CalendarView.tsx` displaying an interactive monthly action grid plotting `next_items` by `due_date`.
      - Placed horizontal Gantt planning bars beneath the grid for all Active Epics, directly reusing the `calculateEpicPace` engine (`src/renderer/src/utils/pace.ts`) to render elapsed horizon percentage, execution progress, and velocity badges.
 - **Rationale**: Separates pure, private human journaling from AI generation while enhancing scheduling visibility and temporal horizon management.
+
+---
+
+## ADR 025: Epics Drag-Reorder, Uniform Card Sizing, Full 7-Day Planner & Minimalist Green Journal (Amendments 21–22)
+- **Status**: Implemented
+- **Date**: 2026-08-29
+- **Decision**:
+  1. **Manual Epics Drag-and-Drop Reordering**:
+     - Upgraded the Active Epics panel in `OverviewView.tsx` from recency-auto-sort to manual `priority_rank`-driven ordering.
+     - Reuses the existing `items:reorder(itemId, newRank)` IPC endpoint without requiring new database columns or backend handlers.
+     - Epic cards render drag handles (`⠿`) and respond to HTML5 drag-and-drop events with instant visual feedback and rank updates.
+  2. **Uniform Card Sizing Across Dashboard & Lanes**:
+     - Dropped the dominant-vs-compact card sizing logic (`isDominant`) in `Card.tsx` and `Lane.tsx`.
+     - Every epic card across all sectors and views renders at the same balanced uniform height with dual progress tracks (Research % and Execution %), stage badge, rank label, and quick status actions.
+  3. **Full 7-Day Weekly Action Calendar Strip**:
+     - Upgraded `OverviewView.tsx` Week view to expand across the full width of the bottom half as an interactive 7-column calendar strip (Monday through Sunday).
+     - Unconditionally displays all 7 days of the current week with day headers, completion check circles, and sector color borders.
+  4. **Pixel-Faithful Minimalist Green Journal with Threading**:
+     - Overhauled `JournalView.tsx` into a dark-forest aesthetic (`#151a15`) with no card borders or boxed wrappers.
+     - Left gutter features vertical date timeline (`F 28` red/orange highlight for today, golden yellow `#eab308` styling for weekend days `S` and `S`, entry count banner, and clickable golden day dots).
+     - Added Squibler Danger Mode with configurable time/word limits and 5-second inactivity timeout.
+     - Implemented nested reflection threading via `parent_id` foreign key and cascade deletion.
+- **Rationale**: Standardizes visual visual hierarchy across the application, enhances tactile control over epic priorities, and delivers an intuitive 7-day planning and reflective journaling experience.
+

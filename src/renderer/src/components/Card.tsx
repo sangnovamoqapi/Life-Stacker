@@ -6,7 +6,6 @@ import { formatEffortBadge } from '../utils/checklist'
 interface CardProps {
   item: Item
   sector: Sector
-  isDominant?: boolean
   isSemanticMatch?: boolean
   onReactivate?: (item: Item) => void
 }
@@ -37,7 +36,6 @@ const statusColors: Record<ItemStatus, string> = {
 export const Card: React.FC<CardProps> = ({ 
   item, 
   sector, 
-  isDominant = false, 
   isSemanticMatch = false,
   onReactivate
 }) => {
@@ -82,51 +80,10 @@ export const Card: React.FC<CardProps> = ({
     await updateItem(item.id, { status: newStatus })
   }
 
-  // ─── Compact mode: single-line row ───
-  if (!isDominant) {
-    return (
-      <div 
-        onClick={() => openItemModal(item.id)}
-        className={`card-compact group cursor-pointer transition-all ${
-          item.status === 'done' ? 'opacity-50' : isParked ? 'opacity-70 border-dashed border-purple-500/40' : ''
-        }`}
-      >
-        <span className="text-[10px] font-mono text-text-muted w-6 shrink-0">{rankLabel}</span>
-        <div 
-          className="w-2 h-2 rounded-full shrink-0 shadow-xs" 
-          style={{ backgroundColor: statusColors[item.status] }} 
-        />
-        <span className={`text-[12px] font-medium text-text-primary truncate flex-1 ${item.status === 'done' ? 'line-through text-text-muted' : ''}`}>
-          {item.title}
-        </span>
-
-        {/* Stage Badge Compact */}
-        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-surface-subtle text-text-secondary border border-border-subtle shrink-0">
-          {stage.label}
-        </span>
-
-        {/* Dual Mini Progress Bars */}
-        <div className="flex flex-col gap-0.5 w-[38px] shrink-0" title={`Research: ${researchProgress}% | Execution: ${executionProgress}%`}>
-          <div className="h-1 rounded-full bg-surface-subtle overflow-hidden">
-            <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${researchProgress}%` }} />
-          </div>
-          <div className="h-1 rounded-full bg-surface-subtle overflow-hidden">
-            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${executionProgress}%` }} />
-          </div>
-        </div>
-
-        <span className="text-[10px] font-mono text-text-muted shrink-0 w-[24px] text-right font-medium">
-          {executionProgress}%
-        </span>
-      </div>
-    )
-  }
-
-  // ─── Dominant mode: expanded top card ───
   return (
     <div 
       onClick={() => openItemModal(item.id)}
-      className={`card-dominant cursor-pointer transition-all ${
+      className={`card-dominant cursor-pointer transition-all hover:scale-[1.005] ${
         item.status === 'done' ? 'opacity-60' : isParked ? 'opacity-75 border-dashed border-purple-500/40' : ''
       }`}
       style={{ 
@@ -135,19 +92,19 @@ export const Card: React.FC<CardProps> = ({
     >
       {/* Top row: Rank + Stage + Status Badge */}
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-text-muted text-xs select-none">⠿</span>
-          <span className="text-xs font-mono font-bold text-text-secondary">{rankLabel}</span>
+          <span className="text-xs font-mono font-bold text-text-secondary shrink-0">{rankLabel}</span>
           
           {/* Stage Indicator Badge */}
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-subtle text-text-secondary border border-border-subtle font-semibold flex items-center gap-1">
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-subtle text-text-secondary border border-border-subtle font-semibold flex items-center gap-1 shrink-0">
             {stage.hasOpenExplore && stage.hasOpenNext ? '✨' : stage.hasOpenExplore ? '🔬' : stage.hasOpenNext ? '⚡' : '✓'}
             <span>{stage.label}</span>
           </span>
 
           {isSemanticMatch && (
             <span 
-              className="text-[10px] font-bold text-accent bg-accent-subtle px-1.5 py-0.2 rounded border border-accent/30 cursor-help"
+              className="text-[10px] font-bold text-accent bg-accent-subtle px-1.5 py-0.2 rounded border border-accent/30 cursor-help shrink-0"
               title="related to your search"
             >
               ✦
@@ -157,7 +114,7 @@ export const Card: React.FC<CardProps> = ({
         
         {/* Status Badge */}
         <div 
-          className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider font-bold border"
+          className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider font-bold border shrink-0"
           style={{ 
             backgroundColor: `color-mix(in srgb, ${statusColors[item.status]} 15%, transparent)`,
             borderColor: `color-mix(in srgb, ${statusColors[item.status]} 40%, transparent)`,
@@ -171,11 +128,11 @@ export const Card: React.FC<CardProps> = ({
       </div>
 
       {/* Title */}
-      <h3 className={`font-sans text-sm font-bold text-text-primary leading-snug mb-2 ${item.status === 'done' ? 'line-through text-text-muted' : ''}`}>
+      <h3 className={`font-sans text-sm font-bold text-text-primary leading-snug mb-2 truncate ${item.status === 'done' ? 'line-through text-text-muted' : ''}`}>
         {item.title}
       </h3>
 
-      {/* Compact Step-Card Up-Next Line for Dominant Card */}
+      {/* Compact Step-Card Up-Next Line */}
       {(() => {
         const itemSteps = getNextItems(item.id)
         const total = itemSteps.length
@@ -186,11 +143,11 @@ export const Card: React.FC<CardProps> = ({
 
         return (
           <div 
-            className="mb-3 bg-surface-subtle border border-border-subtle hover:border-accent/40 rounded-lg p-2.5 transition-all"
+            className="mb-3 bg-surface-subtle border border-border-subtle hover:border-accent/40 rounded-lg p-2 transition-all"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between text-[10px] font-mono text-text-muted mb-1.5">
-              <span className="uppercase tracking-wider text-accent font-semibold flex items-center gap-1.5">
+            <div className="flex items-center justify-between text-[10px] font-mono text-text-muted mb-1">
+              <span className="uppercase tracking-wider text-accent font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                 Up Next
               </span>
@@ -198,7 +155,7 @@ export const Card: React.FC<CardProps> = ({
             </div>
 
             {currentStep ? (
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={async () => {
@@ -216,14 +173,14 @@ export const Card: React.FC<CardProps> = ({
                       })
                     }
                   }}
-                  className="w-4 h-4 rounded-full border-2 border-accent hover:bg-accent/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                  className="w-3.5 h-3.5 rounded-full border-2 border-accent hover:bg-accent/20 flex items-center justify-center shrink-0 transition-all cursor-pointer"
                   title="Click to complete step"
                 />
                 <span className="text-xs font-medium text-text-primary truncate flex-1">
                   {currentStep.title}
                 </span>
                 {currentStep.time_estimate_value && (
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-surface-raised text-text-secondary border border-border-subtle shrink-0">
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-surface-raised text-text-secondary border border-border-subtle shrink-0">
                     ⏱ {formatEffortBadge(currentStep.time_estimate_value, (currentStep.time_estimate_unit as any) || 'hours')}
                   </span>
                 )}
@@ -239,16 +196,16 @@ export const Card: React.FC<CardProps> = ({
       })()}
 
       {/* Meta row */}
-      <div className="flex items-center gap-2 text-xs text-text-muted mb-2.5">
-        <span className="font-mono text-[11px] font-semibold" style={{ color: sectorColor }}>
+      <div className="flex items-center gap-2 text-xs text-text-muted mb-2">
+        <span className="font-mono text-[11px] font-semibold truncate" style={{ color: sectorColor }}>
           {sector.icon ? `${sector.icon} ` : ''}{sector.name}
         </span>
         <span>·</span>
-        <span className="font-mono text-[11px]">{relativeTime(item.updated_at)}</span>
+        <span className="font-mono text-[11px] shrink-0">{relativeTime(item.updated_at)}</span>
         {isStale && (
           <>
             <span>·</span>
-            <span className="text-blocked font-mono text-[10px] bg-blocked-dim border border-blocked/30 px-1.5 py-0.5 rounded font-semibold">
+            <span className="text-blocked font-mono text-[10px] bg-blocked-dim border border-blocked/30 px-1.5 py-0.5 rounded font-semibold shrink-0">
               stale {daysUntouched}d
             </span>
           </>
@@ -256,10 +213,10 @@ export const Card: React.FC<CardProps> = ({
       </div>
 
       {/* Dual Stacked Progress Bars (Research & Execution) */}
-      <div className="space-y-1.5 mb-3 bg-surface-subtle p-2 rounded-lg border border-border-subtle" onClick={e => e.stopPropagation()}>
+      <div className="space-y-1.5 mb-2.5 bg-surface-subtle p-2 rounded-lg border border-border-subtle" onClick={e => e.stopPropagation()}>
         {/* Research Progress */}
         <div>
-          <div className="flex items-center justify-between text-[10px] font-mono text-text-muted mb-1">
+          <div className="flex items-center justify-between text-[10px] font-mono text-text-muted mb-0.5">
             <span className="flex items-center gap-1.5 text-purple-400 font-semibold">
               <span>🔬</span> Research
             </span>
@@ -275,7 +232,7 @@ export const Card: React.FC<CardProps> = ({
 
         {/* Execution Progress */}
         <div>
-          <div className="flex items-center justify-between text-[10px] font-mono text-text-muted mb-1">
+          <div className="flex items-center justify-between text-[10px] font-mono text-text-muted mb-0.5">
             <span className="flex items-center gap-1.5 text-emerald-500 font-semibold">
               <span>⚡</span> Execution
             </span>
@@ -303,14 +260,14 @@ export const Card: React.FC<CardProps> = ({
           </button>
         </div>
       ) : item.status !== 'done' && (
-        <div className="flex gap-1.5 mt-1 pt-2 border-t border-border-subtle" onClick={e => e.stopPropagation()}>
+        <div className="flex gap-1 mt-1 pt-2 border-t border-border-subtle" onClick={e => e.stopPropagation()}>
           {(['active', 'paused', 'blocked', 'parked', 'done'] as const).map(s => {
             const isCurrent = item.status === s
             return (
               <button
                 key={s}
                 onClick={(e) => handleStatusChange(e, s)}
-                className={`text-[9px] uppercase font-mono px-2 py-1 rounded border transition-all cursor-pointer flex-1 text-center font-semibold ${
+                className={`text-[9px] uppercase font-mono px-1.5 py-0.5 rounded border transition-all cursor-pointer flex-1 text-center font-semibold ${
                   isCurrent 
                     ? 'font-bold' 
                     : 'opacity-70 hover:opacity-100'
