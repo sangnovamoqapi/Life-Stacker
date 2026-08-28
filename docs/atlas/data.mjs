@@ -53,7 +53,10 @@ export const DECISIONS = [
   { axis: 'Pace & Horizon', decision: 'Non-alerting velocity calculation and discretionary capacity modeling (28h/week)', adr: '[ADR 018](../ARCHITECTURE_DECISIONS.md#adr-018-derived-pace-burn-tracking-engine--discretionary-capacity-phase-4)' },
   { axis: 'AI Model Choice', decision: 'Dynamic Ollama /api/tags discovery, custom tag selector, and 4-tier native tool calling', adr: '[ADR 020](../ARCHITECTURE_DECISIONS.md#adr-020-dynamic-local-ai-model-selector--4-tier-assistant-architecture)' },
   { axis: 'Interactive Tour', decision: 'Dynamic SVG spotlight walkthrough with deferred roadmap for Lanes re-visualization and Stats revamp', adr: '[ADR 021](../ARCHITECTURE_DECISIONS.md#adr-021-interactive-ui-walkthrough--deferred-screen-roadmap-lanes--stats-revamps)' },
-  { axis: 'Theme Architecture', decision: 'Flat warm-neutral minimal token system with instant runtime light/dark switching and WCAG AA contrast', adr: '[ADR 022](../ARCHITECTURE_DECISIONS.md#adr-022-flat-warm-neutral-minimal-dual-mode-token-system--runtime-theme-switching)' }
+  { axis: 'Theme Architecture', decision: 'Flat warm-neutral minimal token system with instant runtime light/dark switching and WCAG AA contrast', adr: '[ADR 022](../ARCHITECTURE_DECISIONS.md#adr-022-flat-warm-neutral-minimal-dual-mode-token-system--runtime-theme-switching)' },
+  { axis: 'Graph Edges & Chat', decision: 'Propose-never-commit diff card flow for graph edges, compact ID-to-title index, and seed vocabulary defense', adr: '[ADR 023](../ARCHITECTURE_DECISIONS.md#adr-023-graph-edges-in-chat--compact-id-indexing-amendment-17)' },
+  { axis: 'Journal & Calendar', decision: 'Zero-AI Journal with local media attachments, read-only chat querying, Today/Week toggle, and Gantt horizon timeline', adr: '[ADR 024](../ARCHITECTURE_DECISIONS.md#adr-024-journal-system-with-local-attachments-todayweek-toggle--calendargantt-horizons-amendment-20)' },
+  { axis: 'Epics & Card Layout', decision: 'Manual priority_rank drag-reordering for Epics, uniform card sizing across Lanes, and full 7-day action planner', adr: '[ADR 025](../ARCHITECTURE_DECISIONS.md#adr-025-epics-drag-reorder-uniform-card-sizing-full-7-day-planner--minimalist-green-journal-amendments-2122)' }
 ];
 
 export const GROUPS = [

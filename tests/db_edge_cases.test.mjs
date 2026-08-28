@@ -87,6 +87,21 @@ db.exec(`
     new_relation_type TEXT,
     changed_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS journal_entries (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT REFERENCES journal_entries(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS journal_attachments (
+    id TEXT PRIMARY KEY,
+    entry_id TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
 `)
 
 // Seed initial test sector
@@ -490,6 +505,152 @@ try {
   )
 } catch (e) {
   assertTest('Test 11: Self-Edge Validation', false, `Error: ${e.message}`)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TEST 12: Journal Entries & Attachments Schema, Date Range Queries & Cascade
+// ═════════════════════════════════════════════════════════════════════════════
+try {
+  const entryId1 = uuid()
+  const entryId2 = uuid()
+  const entryId3 = uuid()
+
+  const date1 = '2026-08-10T10:00:00.000Z'
+  const date2 = '2026-08-20T14:30:00.000Z'
+  const date3 = '2026-08-25T18:00:00.000Z'
+
+  // Insert 3 entries across different dates
+  db.prepare(`INSERT INTO journal_entries (id, content, created_at) VALUES (?, ?, ?)`).run(
+    entryId1, 'First reflection on project architecture', date1
+  )
+  db.prepare(`INSERT INTO journal_entries (id, content, created_at) VALUES (?, ?, ?)`).run(
+    entryId2, 'Breakthrough on vector indexing performance', date2
+  )
+  db.prepare(`INSERT INTO journal_entries (id, content, created_at) VALUES (?, ?, ?)`).run(
+    entryId3, 'Weekly retrospective and planning', date3
+  )
+
+  // Insert attachments for entry 2 (image and audio)
+  const att1 = uuid()
+  const att2 = uuid()
+  db.prepare(`INSERT INTO journal_attachments (id, entry_id, file_path, media_type, created_at) VALUES (?, ?, ?, ?, ?)`).run(
+    att1, entryId2, '/userData/journal-attachments/screenshot.png', 'image', date2
+  )
+  db.prepare(`INSERT INTO journal_attachments (id, entry_id, file_path, media_type, created_at) VALUES (?, ?, ?, ?, ?)`).run(
+    att2, entryId2, '/userData/journal-attachments/voice_memo.mp3', 'audio', date2
+  )
+
+  // Test Date Range Query between Aug 15 and Aug 22 (should return only entry 2)
+  const rangeRows = db.prepare(`
+    SELECT id, content, created_at
+    FROM journal_entries
+    WHERE created_at >= ? AND created_at <= ?
+    ORDER BY created_at ASC
+  `).all('2026-08-15T00:00:00.000Z', '2026-08-22T23:59:59.999Z')
+
+  const attachmentsForEntry2 = db.prepare(`
+    SELECT * FROM journal_attachments WHERE entry_id = ?
+  `).all(entryId2)
+
+  // Test Cascade Deletion
+  db.prepare(`DELETE FROM journal_entries WHERE id = ?`).run(entryId2)
+  const remainingAttachments = db.prepare(`SELECT * FROM journal_attachments WHERE entry_id = ?`).all(entryId2)
+
+  const test12Passed = rangeRows.length === 1 && 
+                       rangeRows[0].id === entryId2 && 
+                       attachmentsForEntry2.length === 2 && 
+                       attachmentsForEntry2[0].media_type === 'image' && 
+                       attachmentsForEntry2[1].media_type === 'audio' &&
+                       remainingAttachments.length === 0
+
+  assertTest(
+    'Test 12: Journal Entries, Multi-media Attachments & Date Range Querying',
+    test12Passed,
+    `Retrieved 1 entry in [2026-08-15, 2026-08-22] with 2 attachments (image + audio), and verified cascade delete of attachments.`
+  )
+} catch (e) {
+  assertTest('Test 12: Journal System', false, `Error: ${e.message}`)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TEST 13: Next Items Due Date Filtering for Week/Calendar View
+// ═════════════════════════════════════════════════════════════════════════════
+try {
+  const epicE = uuid()
+  db.prepare(`INSERT INTO items (id, sector_id, title, status, progress, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    epicE, sectorId, 'Epic E (Scheduling Target)', 'active', 0, now, now
+  )
+
+  const n1 = uuid()
+  const n2 = uuid()
+  const n3 = uuid()
+
+  // n1 due on Wednesday of target week, n2 due next month, n3 flagged today without due_date
+  db.prepare(`INSERT INTO next_items (id, epic_id, title, status, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    n1, epicE, 'Submit report by Wednesday', 'next', '2026-08-26', now
+  )
+  db.prepare(`INSERT INTO next_items (id, epic_id, title, status, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    n2, epicE, 'Follow up next month', 'next', '2026-09-30', now
+  )
+  db.prepare(`INSERT INTO next_items (id, epic_id, title, status, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    n3, epicE, 'Execute urgent task today', 'today', null, now
+  )
+
+  const weekStart = '2026-08-24'
+  const weekEnd = '2026-08-30'
+
+  const weekRows = db.prepare(`
+    SELECT id, title, status, due_date FROM next_items 
+    WHERE epic_id = ? AND (status = 'today' OR (due_date >= ? AND due_date <= ?))
+  `).all(epicE, weekStart, weekEnd)
+
+  const test13Passed = weekRows.length === 2 && 
+                       weekRows.some(r => r.id === n1) && 
+                       weekRows.some(r => r.id === n3) && 
+                       !weekRows.some(r => r.id === n2)
+
+  assertTest(
+    'Test 13: Next Items Week and Due Date Filtering',
+    test13Passed,
+    `Correctly filtered 2 items (one scheduled within week and one flagged Today) while excluding far-future item.`
+  )
+} catch (e) {
+  assertTest('Test 13: Next Items Due Date Filtering', false, `Error: ${e.message}`)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TEST 14: Journal Threading & Child Reply Hierarchy
+// ═════════════════════════════════════════════════════════════════════════════
+try {
+  const rootId = uuid()
+  const reply1Id = uuid()
+  const reply2Id = uuid()
+
+  db.prepare(`INSERT INTO journal_entries (id, parent_id, content, created_at) VALUES (?, ?, ?, ?)`).run(
+    rootId, null, 'Root reflection thread: Building locally with Ollama', now
+  )
+  db.prepare(`INSERT INTO journal_entries (id, parent_id, content, created_at) VALUES (?, ?, ?, ?)`).run(
+    reply1Id, rootId, 'Thread reply 1: Added Danger Mode with squibler timeout', now
+  )
+  db.prepare(`INSERT INTO journal_entries (id, parent_id, content, created_at) VALUES (?, ?, ?, ?)`).run(
+    reply2Id, rootId, 'Thread reply 2: Tree Gantt expandable rows working seamlessly', now
+  )
+
+  const childRows = db.prepare(`SELECT * FROM journal_entries WHERE parent_id = ? ORDER BY created_at ASC`).all(rootId)
+  const rootRow = db.prepare(`SELECT * FROM journal_entries WHERE id = ?`).get(rootId)
+
+  const test14Passed = rootRow && rootRow.parent_id === null &&
+                       childRows.length === 2 &&
+                       childRows[0].id === reply1Id &&
+                       childRows[1].id === reply2Id
+
+  assertTest(
+    'Test 14: Journal Threading & Reply Linking',
+    test14Passed,
+    `Retrieved root entry and 2 linked threaded replies connected by parent_id.`
+  )
+} catch (e) {
+  assertTest('Test 14: Journal Threading', false, `Error: ${e.message}`)
 }
 
 // Cleanup temp test DB

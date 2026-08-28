@@ -295,7 +295,30 @@ export interface PendingAction {
 
 // ──────────────────────────── IPC API surface ────────────────────────────
 
+export interface JournalAttachment {
+  id: string
+  entry_id: string
+  file_path: string
+  media_type: 'image' | 'audio' | 'video'
+  created_at: string
+}
+
+export interface JournalEntry {
+  id: string
+  parent_id?: string | null
+  content: string
+  created_at: string
+  attachments: JournalAttachment[]
+}
+
 export interface LifeStackAPI {
+  journal: {
+    save(content: string, attachmentPaths?: string[], parentId?: string): Promise<JournalEntry>
+    list(): Promise<JournalEntry[]>
+    query(startDate: string, endDate: string): Promise<JournalEntry[]>
+    delete(id: string): Promise<{ success: boolean }>
+    selectAttachment(): Promise<string[] | null>
+  }
   items: {
     list(filters?: ItemFilters): Promise<Item[]>
     create(data: NewItem): Promise<Item>

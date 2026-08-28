@@ -169,6 +169,21 @@ export function initDb(): void {
       status TEXT NOT NULL DEFAULT 'pending',
       resolved_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS journal_entries (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT REFERENCES journal_entries(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS journal_attachments (
+      id TEXT PRIMARY KEY,
+      entry_id TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+      file_path TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `)
 
   // 3. Schema Migrations (Column additions)
@@ -191,6 +206,13 @@ export function initDb(): void {
   const exploreTableInfo = db.prepare("PRAGMA table_info('explore_items')").all() as { name: string }[]
   if (!exploreTableInfo.some(c => c.name === 'title')) {
     db.exec(`ALTER TABLE explore_items ADD COLUMN title TEXT NOT NULL DEFAULT '';`)
+  }
+
+  const journalTableInfo = db.prepare("PRAGMA table_info('journal_entries')").all() as { name: string }[]
+  if (!journalTableInfo.some(c => c.name === 'parent_id')) {
+    try {
+      db.exec(`ALTER TABLE journal_entries ADD COLUMN parent_id TEXT REFERENCES journal_entries(id) ON DELETE CASCADE;`)
+    } catch {}
   }
 
   // 4. Migrate action_steps -> next_items (Idempotent)

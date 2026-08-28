@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { LifeStackAPI, ItemFilters, NewItem, NewSector, EffortUnit, NewEdge, NewExploreItem, NewNextItem, NextItemStatus } from './types'
 
 const api: LifeStackAPI = {
+  journal: {
+    save: (content: string, attachmentPaths?: string[], parentId?: string) => ipcRenderer.invoke('journal:save', content, attachmentPaths, parentId),
+    list: () => ipcRenderer.invoke('journal:list'),
+    query: (startDate: string, endDate: string) => ipcRenderer.invoke('journal:query', startDate, endDate),
+    delete: (id: string) => ipcRenderer.invoke('journal:delete', id),
+    selectAttachment: () => ipcRenderer.invoke('journal:selectAttachment')
+  },
   items: {
     list: (filters?: ItemFilters) => ipcRenderer.invoke('items:list', filters),
     create: (data: NewItem) => ipcRenderer.invoke('items:create', data),

@@ -280,3 +280,48 @@ This document tracks all foundational architecture, design, and engineering deci
      - Non-seed relation types are not silently coerced; the assistant surfaces a plain conversational query asking the user whether to expand the vocabulary.
      - Self-edges (`from_item_id === to_item_id`) are rejected before creating pending actions or diff cards.
 - **Rationale**: Keeps relational graph structuring safe, auditable, and human-supervised while equipping local models with low-latency name resolution.
+
+## ADR 024: Journal System with Local Attachments, Today/Week Toggle & Calendar/Gantt Horizons (Amendment 20)
+- **Status**: Implemented
+- **Date**: 2026-08-28
+- **Decision**:
+  1. **Zero-AI Journal Architecture**:
+     - Dedicated `journal_entries` and `journal_attachments` SQLite tables for human reflections, notes, and media attachments.
+     - Strictly no AI copilot, suggestions, or reflection buttons anywhere on the Journal screen (`JournalView.tsx`).
+     - Selected attachments are copied into `userData/journal-attachments/` with UUID-prefixed filenames and served safely via the `media://` custom protocol (supporting range requests and streaming for `.mp3`, `.wav`, `.ogg`, `.m4a`, `.mp4`, `.webm`, `.mov`, and images).
+     - Fire-and-forget vector memory chunk insertion (`source_type: 'journal_entry'`) on save without blocking UI operations.
+  2. **Read-Only Chat Tool `journal_query`**:
+     - Registered `journal_query(startDate, endDate)` in `TOOLS_SCHEMA` as a read-only query tool with no review diff cards (same tier as `memory_search`).
+     - Enables conversational models to summarize or answer questions about personal reflections across date intervals.
+  3. **Today / Week Segmented Switch**:
+     - Investigated and confirmed `status` on `next_items` (`'today' | 'next' | 'done'`) as the single source of truth for Today's focus.
+     - Added a segmented **Today | Week** toggle to the bottom-right panel of `OverviewView.tsx` without screen jumping.
+     - In Week mode, aggregates items flagged `today` alongside non-completed actions scheduled with `due_date` inside the current week (Monday–Sunday), grouped under day-of-week headers.
+  4. **Calendar & Active Epic Gantt View**:
+     - Built `CalendarView.tsx` displaying an interactive monthly action grid plotting `next_items` by `due_date`.
+     - Placed horizontal Gantt planning bars beneath the grid for all Active Epics, directly reusing the `calculateEpicPace` engine (`src/renderer/src/utils/pace.ts`) to render elapsed horizon percentage, execution progress, and velocity badges.
+- **Rationale**: Separates pure, private human journaling from AI generation while enhancing scheduling visibility and temporal horizon management.
+
+---
+
+## ADR 025: Epics Drag-Reorder, Uniform Card Sizing, Full 7-Day Planner & Minimalist Green Journal (Amendments 21–22)
+- **Status**: Implemented
+- **Date**: 2026-08-29
+- **Decision**:
+  1. **Manual Epics Drag-and-Drop Reordering**:
+     - Upgraded the Active Epics panel in `OverviewView.tsx` from recency-auto-sort to manual `priority_rank`-driven ordering.
+     - Reuses the existing `items:reorder(itemId, newRank)` IPC endpoint without requiring new database columns or backend handlers.
+     - Epic cards render drag handles (`⠿`) and respond to HTML5 drag-and-drop events with instant visual feedback and rank updates.
+  2. **Uniform Card Sizing Across Dashboard & Lanes**:
+     - Dropped the dominant-vs-compact card sizing logic (`isDominant`) in `Card.tsx` and `Lane.tsx`.
+     - Every epic card across all sectors and views renders at the same balanced uniform height with dual progress tracks (Research % and Execution %), stage badge, rank label, and quick status actions.
+  3. **Full 7-Day Weekly Action Calendar Strip**:
+     - Upgraded `OverviewView.tsx` Week view to expand across the full width of the bottom half as an interactive 7-column calendar strip (Monday through Sunday).
+     - Unconditionally displays all 7 days of the current week with day headers, completion check circles, and sector color borders.
+  4. **Pixel-Faithful Minimalist Green Journal with Threading**:
+     - Overhauled `JournalView.tsx` into a dark-forest aesthetic (`#151a15`) with no card borders or boxed wrappers.
+     - Left gutter features vertical date timeline (`F 28` red/orange highlight for today, golden yellow `#eab308` styling for weekend days `S` and `S`, entry count banner, and clickable golden day dots).
+     - Added Squibler Danger Mode with configurable time/word limits and 5-second inactivity timeout.
+     - Implemented nested reflection threading via `parent_id` foreign key and cascade deletion.
+- **Rationale**: Standardizes visual visual hierarchy across the application, enhances tactile control over epic priorities, and delivers an intuitive 7-day planning and reflective journaling experience.
+

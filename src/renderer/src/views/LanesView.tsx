@@ -142,7 +142,6 @@ export const LanesView: React.FC = () => {
                     key={item.id}
                     item={item}
                     sector={getSector(item.sector_id)}
-                    isDominant={true}
                     onReactivate={handleReactivateParked}
                   />
                 ))}

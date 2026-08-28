@@ -37,12 +37,11 @@ export const Lane: React.FC<LaneProps> = ({ sector }) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1 relative">
-        {openItems.map((item, idx) => (
+        {openItems.map((item) => (
           <Card 
             key={item.id} 
             item={item} 
             sector={sector} 
-            isDominant={idx === 0} 
             isSemanticMatch={semanticMatchedIds.has(item.id)}
           />
         ))}
@@ -71,7 +70,6 @@ export const Lane: React.FC<LaneProps> = ({ sector }) => {
                     key={item.id} 
                     item={item} 
                     sector={sector} 
-                    isDominant={false} 
                     isSemanticMatch={semanticMatchedIds.has(item.id)}
                   />
                 ))}

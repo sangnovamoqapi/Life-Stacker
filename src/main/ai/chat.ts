@@ -7,6 +7,7 @@ import * as exploreItemsDb from '../db/explore-items'
 import * as nextItemsDb from '../db/next-items'
 import * as actionStepsDb from '../db/action-steps'
 import * as edgesDb from '../db/edges'
+import * as journalDb from '../db/journal'
 import * as ollamaClient from './ollama-client'
 import type { ChatMessage, PendingAction, Sector, Item, ItemStatus } from '../../preload/types'
 
@@ -401,6 +402,21 @@ const TOOLS_SCHEMA = [
         required: ['query']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'journal_query',
+      description: 'Query the user\'s personal journal entries by date range (startDate to endDate in YYYY-MM-DD format). Read-only query tool to retrieve journal thoughts, reflections, notes, and attachment metadata.',
+      parameters: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string', description: 'Start date in YYYY-MM-DD format (e.g. "2026-08-01")' },
+          endDate: { type: 'string', description: 'End date in YYYY-MM-DD format (e.g. "2026-08-31")' }
+        },
+        required: ['startDate', 'endDate']
+      }
+    }
   }
 ]
 
@@ -481,10 +497,12 @@ BEHAVIOR & TOOL GUIDELINES:
    - Always use the COMPACT ITEM INDEX above to resolve item names/titles to exact item IDs without needing a lookup round-trip.
    - Example: If item A ("Deploy API") depends on item B ("Buy Server"), from_item_id is A's ID, to_item_id is B's ID, and relation_type is 'depends_on'.
    - Never propose a self-edge (from_item_id must not equal to_item_id).
-5. UPDATING EPICS OR CHECKING STATE:
+5. QUERYING JOURNAL ENTRIES:
+   - Call \`journal_query\` with \`startDate\` and \`endDate\` (YYYY-MM-DD) whenever the user asks to summarize, review, or find journal entries over a time period.
+6. UPDATING EPICS OR CHECKING STATE:
    - Call \`items_update\` to change status, progress, notes, or time budget.
    - Call \`memory_search\` for semantic questions ("what's stale in Health"), NOT for ID lookups (use COMPACT ITEM INDEX instead).
-6. All item creations and edge relationships create pending action diff cards that require user confirmation.
+7. All item creations and edge relationships create pending action diff cards that require user confirmation.
 `
 }
 
@@ -831,6 +849,56 @@ export async function sendMessage(userContent: string): Promise<{ assistantMessa
       }
     } catch (followUpErr: any) {
       console.error('[Chat FollowUp Error]:', followUpErr)
+    }
+  }
+
+  // 4b. Handle journal_query tool calls (Multi-turn retrieval for journal)
+  if (Array.isArray(assistantMsg.tool_calls) && assistantMsg.tool_calls.some(tc => tc.function?.name === 'journal_query' || tc.function?.name === 'journal:query')) {
+    const journalCall = assistantMsg.tool_calls.find(tc => tc.function?.name === 'journal_query' || tc.function?.name === 'journal:query')
+    let startDate = ''
+    let endDate = ''
+    try {
+      const args = typeof journalCall.function.arguments === 'string' ? JSON.parse(journalCall.function.arguments) : journalCall.function.arguments
+      startDate = args.startDate || args.start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      endDate = args.endDate || args.end_date || new Date().toISOString().slice(0, 10)
+    } catch {
+      startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      endDate = new Date().toISOString().slice(0, 10)
+    }
+
+    console.log(`[Chat Tool] Executing journal_query from ${startDate} to ${endDate}`)
+    const entries = journalDb.queryJournalEntriesByDateRange(startDate, endDate)
+    const formattedEntries = entries.length > 0
+      ? entries.map(e => `[${new Date(e.created_at).toLocaleDateString()}]: ${e.content}${e.attachments.length > 0 ? ` (Attachments: ${e.attachments.map(a => a.media_type).join(', ')})` : ''}`).join('\n\n')
+      : 'No journal entries found in this date range.'
+
+    formattedMessages.push(assistantMsg)
+    formattedMessages.push({
+      role: 'tool',
+      content: `Journal entries between ${startDate} and ${endDate}:\n${formattedEntries}`
+    })
+
+    try {
+      const followUpRes = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: formattedMessages,
+          tools: TOOLS_SCHEMA,
+          stream: false,
+          keep_alive: '30m'
+        })
+      })
+
+      if (followUpRes.ok) {
+        const followUpData = await followUpRes.json() as { message?: { role: string; content: string; tool_calls?: any[] } }
+        if (followUpData.message) {
+          assistantMsg = followUpData.message
+        }
+      }
+    } catch (followUpErr: any) {
+      console.error('[Chat Journal FollowUp Error]:', followUpErr)
     }
   }
 
